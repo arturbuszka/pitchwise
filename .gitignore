@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+*.db
+*.sqlite3
+
+# data / media
+data/
+storage/
+*.mp4
+*.mov
+*.mkv
+*.avi
+*.pt
+*.onnx
+!**/sample/*.mp4
+
+# Node / Next
+node_modules/
+.next/
+out/
+.env.local
+.env*.local
+npm-debug.log*
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
