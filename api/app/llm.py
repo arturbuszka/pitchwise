@@ -18,7 +18,10 @@ settings = get_settings()
 def _headers() -> dict[str, str]:
     headers = {"Content-Type": "application/json"}
     if settings.llm_api_key:
-        headers["Authorization"] = f"Bearer {settings.llm_api_key}"
+        if settings.llm_provider == "anthropic":
+            headers["x-api-key"] = settings.llm_api_key
+        else:
+            headers["Authorization"] = f"Bearer {settings.llm_api_key}"
     return headers
 
 

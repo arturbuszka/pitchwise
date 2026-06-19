@@ -16,10 +16,10 @@ class Settings(BaseSettings):
     analysis_inline: bool = False  # True = analiza w request, bez Redis/workera (dev/MVP)
 
     # LLM (provider-agnostic: OpenAI-compatible chat API)
-    llm_provider: str = "anthropic"            # etykieta opisowa
-    llm_base_url: str = "https://api.anthropic.com/v1"
+    llm_provider: str = "openai"
+    llm_base_url: str = "https://api.openai.com/v1"
     llm_api_key: str = ""
-    llm_model: str = "claude-sonnet-4-6"
+    llm_model: str = "gpt-4o-mini"
 
     # Vision
     yolo_model_path: str = ""

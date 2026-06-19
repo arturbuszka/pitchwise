@@ -15,7 +15,7 @@ web (Next.js / TS)  ──HTTP/SSE──►  api (FastAPI / Python)
 
 - **Backend + Vision = Python** (jeden język, bez mostu między nimi).
 - **UI = TypeScript/Next.js** (`assistant-ui` do czatu, natywny `<video>` + canvas overlay).
-- **LLM przełączalny** (env `LLM_PROVIDER`): Claude API na start, Ollama później.
+- **LLM przełączalny** (env `LLM_PROVIDER`): OpenAI API na start, Ollama później.
 
 ## Wymagania
 

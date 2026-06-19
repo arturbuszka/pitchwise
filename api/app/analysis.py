@@ -20,12 +20,6 @@ from app.models import (
 settings = get_settings()
 
 
-async def _set_progress(session: AsyncSession, analysis_id: int, progress: float) -> None:
-    analysis = await session.get(Analysis, analysis_id)
-    if analysis:
-        analysis.progress = progress
-        await session.commit()
-
 
 async def run_analysis(analysis_id: int) -> None:
     """Wykonuje analizę meczu w tle. Aktualizuje status/progress w DB."""
@@ -50,18 +44,10 @@ async def run_analysis(analysis_id: int) -> None:
         video_path = str(settings.uploads_dir / match.filename)
 
         try:
-            # on_progress jest synchroniczny (woła go pipeline w pętli) — odkładamy
-            # zapis postępu do prostego pola; pełny zapis robimy etapami niżej.
-            progress_holder = {"p": 0.0}
-
-            def on_progress(p: float) -> None:
-                progress_holder["p"] = p
-
             result = analyze_video(
                 video_path,
                 yolo_model_path=settings.yolo_model_path or None,
                 frame_stride=settings.frame_stride,
-                on_progress=on_progress,
             )
 
             # zapis metadanych meczu
