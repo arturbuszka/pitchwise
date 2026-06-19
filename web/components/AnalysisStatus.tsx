@@ -12,10 +12,10 @@ const STATUS_LABEL: Record<string, string> = {
 };
 
 const STATUS_COLOR: Record<string, string> = {
-  pending: "text-yellow-400",
-  running: "text-blue-400",
-  done: "text-green-400",
-  failed: "text-red-400",
+  pending: "text-orange-500",
+  running: "text-[#2f5fe0]",
+  done: "text-green-600",
+  failed: "text-red-500",
 };
 
 export function AnalysisStatus({
@@ -57,7 +57,7 @@ export function AnalysisStatus({
       <button
         onClick={startAnalysis}
         disabled={starting}
-        className="bg-green-600 hover:bg-green-500 disabled:bg-gray-700 disabled:text-gray-500 text-white text-sm font-medium rounded-lg px-4 py-2 transition-colors"
+        className="bg-[#2f5fe0] hover:bg-[#2451c7] disabled:opacity-50 text-white text-xs font-semibold rounded-lg px-3 py-2 transition-colors w-full"
       >
         {starting ? "Startowanie…" : "Uruchom analizę"}
       </button>
@@ -65,8 +65,8 @@ export function AnalysisStatus({
   }
 
   return (
-    <div className="flex items-center gap-3">
-      <span className={`text-sm font-medium ${STATUS_COLOR[analysis.status]}`}>
+    <div className="flex flex-col gap-1.5">
+      <span className={`text-xs font-semibold ${STATUS_COLOR[analysis.status]}`}>
         {STATUS_LABEL[analysis.status]}
         {analysis.status === "running" &&
           analysis.progress > 0 &&
@@ -76,7 +76,7 @@ export function AnalysisStatus({
         <button
           onClick={startAnalysis}
           disabled={starting}
-          className="text-xs text-gray-400 underline hover:text-white"
+          className="text-xs text-[#2f5fe0] underline hover:text-[#2451c7] text-left"
         >
           Ponów
         </button>
@@ -85,7 +85,7 @@ export function AnalysisStatus({
         <button
           onClick={startAnalysis}
           disabled={starting}
-          className="text-xs text-gray-500 hover:text-white border border-gray-700 rounded px-2 py-1"
+          className="text-xs text-[#6b7280] hover:text-[#14181f] border border-[#ffffff1a] rounded px-2 py-1 transition-colors text-left"
         >
           Ponów analizę
         </button>
