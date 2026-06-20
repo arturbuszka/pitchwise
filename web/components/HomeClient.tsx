@@ -1,23 +1,35 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
-import { Match } from "@/lib/api";
+import { api, AnalysisSummary, SessionStatus, Sport } from "@/lib/api";
 import { NewAnalysisModal } from "./NewAnalysisModal";
 
-const SPORT_OPTIONS = [
-  "Wszystkie sporty",
-  "Piłka nożna",
-  "Koszykówka",
-  "Ręczna",
+const SPORT_OPTIONS: { value: Sport | ""; label: string; icon: string }[] = [
+  { value: "", label: "Wszystkie sporty", icon: "" },
+  { value: "football", label: "Piłka nożna", icon: "⚽" },
+  { value: "basketball", label: "Koszykówka", icon: "🏀" },
+  { value: "handball", label: "Ręczna", icon: "🤾" },
 ];
 
-function StatusBadge({ title }: { title: string }) {
-  const lower = title.toLowerCase();
-  if (lower.includes("analiz")) {
+const SPORT_LABELS: Record<Sport, string> = {
+  football: "⚽ Piłka nożna",
+  basketball: "🏀 Koszykówka",
+  handball: "🤾 Ręczna",
+};
+
+function StatusBadge({ status }: { status: SessionStatus }) {
+  if (status === "processing") {
     return (
       <span className="inline-block px-3 py-1 rounded-full text-xs font-semibold bg-orange-100 text-orange-700">
         Analiza…
+      </span>
+    );
+  }
+  if (status === "done") {
+    return (
+      <span className="inline-block px-3 py-1 rounded-full text-xs font-semibold bg-green-100 text-green-700">
+        Gotowa
       </span>
     );
   }
@@ -28,14 +40,26 @@ function StatusBadge({ title }: { title: string }) {
   );
 }
 
-export function HomeClient({ matches }: { matches: Match[] }) {
+export function HomeClient() {
+  const [analyses, setAnalyses] = useState<AnalysisSummary[]>([]);
+  const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
   const [search, setSearch] = useState("");
-  const [sport, setSport] = useState("Wszystkie sporty");
+  const [sport, setSport] = useState<Sport | "">("");
 
-  const filtered = matches.filter((m) =>
-    m.title.toLowerCase().includes(search.toLowerCase())
-  );
+  useEffect(() => {
+    console.log("fetching analyses...");
+    api.analyses.list()
+      .then((data) => { console.log("analyses:", data); setAnalyses(data); })
+      .catch((err) => { console.error("analyses error:", err); setAnalyses([]); })
+      .finally(() => setLoading(false));
+  }, []);
+
+  const filtered = analyses.filter((a) => {
+    const matchesSport = sport === "" || a.sport === sport;
+    const matchesSearch = a.name.toLowerCase().includes(search.toLowerCase());
+    return matchesSport && matchesSearch;
+  });
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -76,11 +100,11 @@ export function HomeClient({ matches }: { matches: Match[] }) {
           <div className="flex gap-2">
             <select
               value={sport}
-              onChange={(e) => setSport(e.target.value)}
+              onChange={(e) => setSport(e.target.value as Sport | "")}
               className="border border-[#e4e7ec] rounded-[9px] px-3 py-2 text-[13px] text-[#6b7280] font-medium bg-white focus:outline-none focus:border-[#2f5fe0]"
             >
               {SPORT_OPTIONS.map((s) => (
-                <option key={s}>{s}</option>
+                <option key={s.value} value={s.value}>{s.label}</option>
               ))}
             </select>
             <input
@@ -105,45 +129,45 @@ export function HomeClient({ matches }: { matches: Match[] }) {
             <div className="w-6" />
           </div>
 
-          {filtered.length === 0 ? (
+          {loading ? (
+            <p className="text-[#9aa0a8] text-sm text-center py-12">Ładowanie…</p>
+          ) : filtered.length === 0 ? (
             <p className="text-[#9aa0a8] text-sm text-center py-12">
-              {matches.length === 0
+              {analyses.length === 0
                 ? 'Brak analiz. Kliknij "Nowa analiza" aby rozpocząć.'
                 : "Brak wyników dla podanej frazy."}
             </p>
           ) : (
-            filtered.map((m) => (
+            filtered.map((a) => (
               <Link
-                key={m.id}
-                href={`/matches/${m.id}`}
+                key={a.id}
+                href={`/analyses/${a.id}`}
                 className="flex items-center gap-4 px-[18px] py-4 border-b border-[#f1f3f5] cursor-pointer hover:bg-[#f7f8fa] transition-colors last:border-b-0"
               >
                 <div className="flex-[1.7] flex items-center gap-3 min-w-0">
                   <span className="w-[38px] h-[38px] rounded-[9px] bg-[#f1f3f5] flex items-center justify-center text-base shrink-0">
-                    ⚽
+                    {SPORT_LABELS[a.sport]?.split(" ")[0] ?? "🎯"}
                   </span>
                   <div className="min-w-0">
-                    <p className="text-[15px] font-semibold truncate">{m.title}</p>
+                    <p className="text-[15px] font-semibold truncate">{a.name}</p>
                     <p className="text-[12px] text-[#9aa0a8] font-medium">
-                      {m.duration_seconds
-                        ? `${Math.round(m.duration_seconds / 60)} min`
-                        : "—"}
+                      {a.subtitle ?? "—"}
                     </p>
                   </div>
                 </div>
                 <div className="flex-1 text-[14px] text-[#6b7280] font-medium">
-                  Piłka nożna
+                  {SPORT_LABELS[a.sport] ?? a.sport}
                 </div>
                 <div className="w-[120px] text-[14px] text-[#6b7280] font-medium tabular-nums">
-                  {new Date(m.created_at).toLocaleDateString("pl-PL")}
+                  {new Date(a.updated_at).toLocaleDateString("pl-PL")}
                 </div>
                 <div className="w-[80px] text-center">
                   <span className="inline-flex items-center justify-center min-w-[26px] h-6 px-2 rounded-[7px] bg-[#f1f3f5] text-[13px] font-semibold text-[#6b7280] tabular-nums">
-                    1
+                    {a.video_count}
                   </span>
                 </div>
                 <div className="w-[130px]">
-                  <StatusBadge title={m.title} />
+                  <StatusBadge status={a.status} />
                 </div>
                 <div className="w-6 text-center text-[20px] text-[#cbd0d6]">›</div>
               </Link>
@@ -152,7 +176,14 @@ export function HomeClient({ matches }: { matches: Match[] }) {
         </div>
       </main>
 
-      {modalOpen && <NewAnalysisModal onClose={() => setModalOpen(false)} />}
+      {modalOpen && (
+        <NewAnalysisModal
+          onClose={() => {
+            setModalOpen(false);
+            api.analyses.list().then(setAnalyses).catch(() => {});
+          }}
+        />
+      )}
     </div>
   );
 }

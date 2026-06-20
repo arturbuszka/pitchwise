@@ -29,6 +29,7 @@ class Settings(BaseSettings):
 
     # CORS
     web_origin: str = "http://localhost:3000"
+    web_origin_alt: str = "http://localhost:3001"
 
     # --- ścieżki pochodne ---
     @property

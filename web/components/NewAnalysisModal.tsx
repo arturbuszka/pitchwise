@@ -26,8 +26,9 @@ export function NewAnalysisModal({ onClose }: { onClose: () => void }) {
     setLoading(true);
     setError(null);
     try {
-      const match = await api.matches.upload(file, title || file.name);
-      router.push(`/matches/${match.id}`);
+      const analysis = await api.analyses.create(title || file.name, sport);
+      await api.analyses.videos.upload(analysis.id, file, file.name);
+      router.push(`/analyses/${analysis.id}`);
     } catch {
       setError("Nie udało się utworzyć analizy. Spróbuj ponownie.");
       setLoading(false);
