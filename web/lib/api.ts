@@ -1,4 +1,6 @@
-const API = process.env.NEXT_PUBLIC_API_URL || "";
+const API =
+  process.env.NEXT_PUBLIC_API_URL ||
+  (typeof window === "undefined" ? "http://localhost:8000" : "");
 
 // ---------------------------------------------------------------------------
 // Nowe interfejsy (nowy model danych)
