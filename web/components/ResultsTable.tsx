@@ -1,6 +1,6 @@
 "use client";
 
-import { Event, Clip, formatTime } from "@/lib/api";
+import { OldEvent as Event, OldClip as Clip, formatTime } from "@/lib/api";
 
 const TAG_STYLE: Record<string, { bg: string; text: string; label: string }> = {
   goal: { bg: "bg-green-100", text: "text-green-700", label: "Bramka" },

@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
 from app.db import init_db
-from app.routers import chat, matches
+from app.routers import analyses, chat, event_types, matches, videos
 
 settings = get_settings()
 
@@ -26,6 +26,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(analyses.router)
+app.include_router(videos.router)
+app.include_router(event_types.router)
 app.include_router(matches.router)
 app.include_router(chat.router)
 

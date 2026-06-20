@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { api, Clip } from "@/lib/api";
+import { api, OldClip as Clip } from "@/lib/api";
 
 export function ClipPlayer({
   clip,

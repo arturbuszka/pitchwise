@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { api, Analysis } from "@/lib/api";
+import { api, OldAnalysis as Analysis } from "@/lib/api";
 
 const STATUS_LABEL: Record<string, string> = {
   pending: "Oczekuje…",

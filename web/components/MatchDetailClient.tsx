@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { Match, Analysis, Event, Clip } from "@/lib/api";
+import { Match, OldAnalysis as Analysis, OldEvent as Event, OldClip as Clip } from "@/lib/api";
 import { Chat } from "./Chat";
 import { QuickActions } from "./QuickActions";
 import { ResultsTable } from "./ResultsTable";

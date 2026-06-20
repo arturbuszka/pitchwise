@@ -1,4 +1,4 @@
-import { Event, Clip, formatTime } from "@/lib/api";
+import { OldEvent as Event, OldClip as Clip, formatTime } from "@/lib/api";
 import { ClipPlayer } from "@/components/ClipPlayer";
 
 const TYPE_ICON: Record<string, string> = {
