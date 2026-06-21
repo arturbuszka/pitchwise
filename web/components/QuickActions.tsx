@@ -1,40 +1,50 @@
 "use client";
 
-const ACTIONS = [
-  { icon: "⚽", label: "Znajdź bramki", query: "Znajdź wszystkie bramki w tym meczu", primary: true },
-  { icon: "🎯", label: "Strzały na bramkę", query: "Pokaż wszystkie strzały na bramkę", primary: false },
-  { icon: "↗", label: "Nieskuteczne podania", query: "Znajdź nieskuteczne podania", primary: false },
-  { icon: "🟨", label: "Faule i kartki", query: "Pokaż faule i kartki", primary: false },
-  { icon: "⛳", label: "Rzuty wolne", query: "Znajdź rzuty wolne", primary: false },
-  { icon: "🚩", label: "Spalone", query: "Pokaż sytuacje spalonych", primary: false },
-  { icon: "🔄", label: "Zmiany", query: "Pokaż zmiany zawodników", primary: false },
-  { icon: "📐", label: "Stałe fragmenty", query: "Znajdź stałe fragmenty gry", primary: false },
+import { EventType } from "@/lib/api";
+
+const ACTIONS: { icon: string; label: string; type: EventType }[] = [
+  { icon: "⚽", label: "Bramki", type: "goal" },
+  { icon: "🎯", label: "Strzały na bramkę", type: "shot" },
+  { icon: "↗", label: "Nieskuteczne podania", type: "wayward_pass" },
+  { icon: "🟨", label: "Faule i kartki", type: "foul" },
+  { icon: "⛳", label: "Rzuty wolne", type: "free_kick" },
+  { icon: "🚩", label: "Spalone", type: "offside" },
+  { icon: "🔄", label: "Zmiany", type: "substitution" },
+  { icon: "📐", label: "Stałe fragmenty", type: "set_piece" },
 ];
 
+/**
+ * Pasek szybkich akcji = multi-select filtry panelu wyników.
+ * Domyślnie nic nie zaznaczone => panel pokazuje wszystkie zdarzenia.
+ * Toggle typu zawęża listę (suma zaznaczonych typów, OR).
+ */
 export function QuickActions({
-  onAction,
-  disabled,
+  active,
+  onToggle,
 }: {
-  onAction: (query: string) => void;
-  disabled?: boolean;
+  active: Set<EventType>;
+  onToggle: (type: EventType) => void;
 }) {
   return (
     <div className="flex flex-wrap gap-2">
-      {ACTIONS.map((a) => (
-        <button
-          key={a.label}
-          onClick={() => onAction(a.query)}
-          disabled={disabled}
-          className={`flex items-center gap-1.5 px-3 py-2 rounded-[9px] text-[13px] font-semibold border transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
-            a.primary
-              ? "border-[#2f5fe0] text-[#2f5fe0] bg-[#eef3ff] hover:bg-[#dde8ff]"
-              : "border-[#e4e7ec] text-[#374151] bg-white hover:border-[#2f5fe0] hover:text-[#2f5fe0]"
-          }`}
-        >
-          <span>{a.icon}</span>
-          {a.label}
-        </button>
-      ))}
+      {ACTIONS.map((a) => {
+        const isActive = active.has(a.type);
+        return (
+          <button
+            key={a.type}
+            onClick={() => onToggle(a.type)}
+            aria-pressed={isActive}
+            className={`flex items-center gap-1.5 px-3 py-2 rounded-[9px] text-[13px] font-semibold border transition-colors ${
+              isActive
+                ? "border-[#2f5fe0] text-[#2f5fe0] bg-[#eef3ff] hover:bg-[#dde8ff]"
+                : "border-[#e4e7ec] text-[#374151] bg-white hover:border-[#2f5fe0] hover:text-[#2f5fe0]"
+            }`}
+          >
+            <span>{a.icon}</span>
+            {a.label}
+          </button>
+        );
+      })}
     </div>
   );
 }

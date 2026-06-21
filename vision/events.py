@@ -86,7 +86,9 @@ def detect_events(
                 break
         if lost >= cfg.ball_lost_frames:
             _emit("goal", ts, conf=min(0.6, speed / (threshold * 2)), label="kandydat: gol (piłka znika po przyspieszeniu)")
-        else:
-            _emit("shot", ts, conf=min(0.5, speed / (threshold * 2)), label="kandydat: strzał (przyspieszenie piłki)")
+        # Strzały ("shot") wyłączone na tym etapie — skupiamy się tylko na golach.
+        # Heurystyka zostaje, by łatwo wrócić: wystarczy odkomentować poniższe.
+        # else:
+        #     _emit("shot", ts, conf=min(0.5, speed / (threshold * 2)), label="kandydat: strzał (przyspieszenie piłki)")
 
     return events

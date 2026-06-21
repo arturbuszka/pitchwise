@@ -15,7 +15,6 @@ settings = get_settings()
 
 async def run_vision_job(job_id: int) -> None:
     """Wykonuje analizę wideo w tle. Aktualizuje VisionJob, Event, Clip, Video w DB."""
-    from vision.clips import extract_clip
     from vision.pipeline import analyze_video
 
     async with async_session_maker() as session:
@@ -47,7 +46,7 @@ async def run_vision_job(job_id: int) -> None:
             video.duration_seconds = result.duration_seconds
             video.fps = result.fps
 
-            # zapisz zdarzenia + wytnij klipy
+            # zapisz zdarzenia (klipy per event — patrz niżej, wyłączone na tym etapie)
             for det in result.events:
                 event = Event(
                     analysis_id=video.analysis_id,
@@ -61,20 +60,25 @@ async def run_vision_job(job_id: int) -> None:
                 session.add(event)
                 await session.flush()
 
-                start = max(0.0, det.timestamp_seconds - settings.clip_pre_seconds)
-                end = det.timestamp_seconds + settings.clip_post_seconds
-                clip_name = f"video{video.id}_event{event.id}.mp4"
-                clip_path = settings.clips_dir / clip_name
-                if extract_clip(video_path, clip_path, start, end):
-                    session.add(
-                        Clip(
-                            event_id=event.id,
-                            video_id=video.id,
-                            filename=clip_name,
-                            start_seconds=start,
-                            end_seconds=end,
+                # Generowanie klipów per event — wyłączone na tym etapie.
+                # Włącz przez GENERATE_CLIPS=1; przyda się ponownie później.
+                if settings.generate_clips:
+                    from vision.clips import extract_clip
+
+                    start = max(0.0, det.timestamp_seconds - settings.clip_pre_seconds)
+                    end = det.timestamp_seconds + settings.clip_post_seconds
+                    clip_name = f"video{video.id}_event{event.id}.mp4"
+                    clip_path = settings.clips_dir / clip_name
+                    if extract_clip(video_path, clip_path, start, end):
+                        session.add(
+                            Clip(
+                                event_id=event.id,
+                                video_id=video.id,
+                                filename=clip_name,
+                                start_seconds=start,
+                                end_seconds=end,
+                            )
                         )
-                    )
 
             job.status = VisionJobStatus.done
             job.progress = 1.0

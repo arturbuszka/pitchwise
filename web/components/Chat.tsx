@@ -1,21 +1,44 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { CHAT_API } from "@/lib/api";
+import { api } from "@/lib/api";
 
 interface Message {
   role: "user" | "assistant";
   content: string;
 }
 
+// Renderuje treść asystenta, zamieniając znaczniki MM:SS na klikalne linki "skok w wideo".
+function renderContent(
+  content: string,
+  onSeek?: (seconds: number) => void
+): React.ReactNode {
+  if (!onSeek) return content;
+  const parts = content.split(/(\d{1,2}:\d{2})/g);
+  return parts.map((part, i) => {
+    const m = part.match(/^(\d{1,2}):(\d{2})$/);
+    if (m) {
+      const seconds = parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
+      return (
+        <button
+          key={i}
+          onClick={() => onSeek(seconds)}
+          className="text-[#2f5fe0] underline font-semibold hover:text-[#2451c7]"
+        >
+          {part}
+        </button>
+      );
+    }
+    return <span key={i}>{part}</span>;
+  });
+}
+
 export function Chat({
-  matchId,
-  pendingMessage,
-  onPendingConsumed,
+  analysisId,
+  onSeek,
 }: {
-  matchId: number;
-  pendingMessage?: string | null;
-  onPendingConsumed?: () => void;
+  analysisId: number;
+  onSeek?: (seconds: number) => void;
 }) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
@@ -26,15 +49,6 @@ export function Chat({
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
-
-  useEffect(() => {
-    if (!pendingMessage || running) return;
-    const text = pendingMessage.trim();
-    if (!text) return;
-    onPendingConsumed?.();
-    sendText(text);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pendingMessage]);
 
   async function sendText(text: string) {
     const next: Message[] = [...messages, { role: "user", content: text }];
@@ -47,11 +61,10 @@ export function Chat({
     setMessages((m) => [...m, { role: "assistant", content: "" }]);
 
     try {
-      const res = await fetch(CHAT_API, {
+      const res = await fetch(api.analyses.chatUrl(analysisId), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          match_id: matchId,
           messages: next.map((m) => ({ role: m.role, content: m.content })),
         }),
         signal: ctrl.signal,
@@ -138,7 +151,9 @@ export function Chat({
                   : "bg-white text-[#14181f] border border-[#eceef1] rounded-bl-[4px]"
               }`}
             >
-              {m.content || (
+              {m.content ? (
+                m.role === "assistant" ? renderContent(m.content, onSeek) : m.content
+              ) : (
                 <span className="text-[#9ca3af] animate-pulse">…</span>
               )}
             </div>

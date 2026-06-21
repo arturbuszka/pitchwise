@@ -6,8 +6,6 @@ Schemat:
     │            └─1:1──► VisionJob  (status przetwarzania YOLO)
     └─1:N──► Event        (zdarzenie wykryte lub tag ręczny)
                  └─1:1──► Clip       (wycięty highlight)
-
-Stare tabele Match/Analysis pozostają dla backward compat, zostaną usunięte po migracji frontendu.
 """
 from datetime import datetime, timezone
 from enum import Enum
@@ -76,7 +74,7 @@ EVENT_TYPE_CONFIG: dict[str, dict] = {
 # ---------------------------------------------------------------------------
 
 class AnalysisSession(SQLModel, table=True):
-    """Główna encja sesji analitycznej (zastępuje Match)."""
+    """Główna encja sesji analitycznej."""
     __tablename__ = "analysissession"
 
     id: Optional[int] = Field(default=None, primary_key=True)
@@ -146,37 +144,3 @@ class Clip(SQLModel, table=True):
     start_seconds: float
     end_seconds: float
     created_at: datetime = Field(default_factory=_now)
-
-
-# ---------------------------------------------------------------------------
-# Stare modele (backward compat — do usunięcia po migracji frontendu)
-# ---------------------------------------------------------------------------
-
-class AnalysisStatus(str, Enum):
-    pending = "pending"
-    running = "running"
-    done = "done"
-    failed = "failed"
-
-
-class Match(SQLModel, table=True):
-    __tablename__ = "match"
-
-    id: Optional[int] = Field(default=None, primary_key=True)
-    title: str
-    filename: str
-    duration_seconds: Optional[float] = None
-    fps: Optional[float] = None
-    created_at: datetime = Field(default_factory=_now)
-
-
-class Analysis(SQLModel, table=True):
-    __tablename__ = "analysis"
-
-    id: Optional[int] = Field(default=None, primary_key=True)
-    match_id: int = Field(foreign_key="match.id", index=True)
-    status: AnalysisStatus = Field(default=AnalysisStatus.pending)
-    progress: float = 0.0
-    error: Optional[str] = None
-    created_at: datetime = Field(default_factory=_now)
-    finished_at: Optional[datetime] = None

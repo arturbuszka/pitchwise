@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     # Vision
     yolo_model_path: str = ""
     frame_stride: int = 5
+    generate_clips: bool = False  # wycinanie klipów per event — wyłączone na tym etapie (GENERATE_CLIPS=1 by włączyć)
     clip_pre_seconds: float = 6.0
     clip_post_seconds: float = 4.0
 
