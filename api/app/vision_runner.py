@@ -1,4 +1,5 @@
 """Runner pipeline vision dla nowego modelu VisionJob/Video/AnalysisSession."""
+import asyncio
 from datetime import datetime, timezone
 
 from sqlalchemy import select
@@ -11,6 +12,15 @@ from app.models import (
 )
 
 settings = get_settings()
+
+
+async def _save_progress(job_id: int, progress: float) -> None:
+    """Zapis postępu w osobnej, krótkiej sesji DB (woła się z wątku roboczego)."""
+    async with async_session_maker() as session:
+        job = await session.get(VisionJob, job_id)
+        if job and job.status == VisionJobStatus.running:
+            job.progress = progress
+            await session.commit()
 
 
 async def run_vision_job(job_id: int) -> None:
@@ -36,10 +46,25 @@ async def run_vision_job(job_id: int) -> None:
         video_path = str(settings.uploads_dir / video.filename)
 
         try:
-            result = analyze_video(
+            # analyze_video jest synchroniczne i CPU-bound (OpenCV + YOLO) — uruchamiamy je
+            # w osobnym wątku, żeby nie blokować event loopu (inaczej /status nie odpowiada).
+            loop = asyncio.get_running_loop()
+            last_saved = 0.0  # ostatni zapisany postęp (throttling)
+
+            def on_progress(p: float) -> None:
+                nonlocal last_saved
+                # zapisuj tylko przy zmianie >= 2%, żeby nie zalać DB
+                if p - last_saved < 0.02 and p < 1.0:
+                    return
+                last_saved = p
+                asyncio.run_coroutine_threadsafe(_save_progress(job_id, p), loop)
+
+            result = await asyncio.to_thread(
+                analyze_video,
                 video_path,
                 yolo_model_path=settings.yolo_model_path or None,
                 frame_stride=settings.frame_stride,
+                on_progress=on_progress,
             )
 
             # zapisz metadane wideo

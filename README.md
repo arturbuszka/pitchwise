@@ -139,23 +139,3 @@ pitchwise/
 ```
 
 ---
-
-## API overview
-
-All endpoints are prefixed `/api`. Interactive Swagger docs available at `/docs` when the API is running.
-
-| Method | Path | Description |
-|---|---|---|
-| `POST` | `/matches` | Upload a video file |
-| `GET` | `/matches` | List all matches |
-| `GET` | `/matches/{id}` | Match details |
-| `GET` | `/matches/{id}/video` | Stream raw video |
-| `POST` | `/matches/{id}/analyze` | Start analysis job |
-| `GET` | `/matches/{id}/analysis` | Analysis status & progress |
-| `GET` | `/matches/{id}/events` | List detected and manual events |
-| `POST` | `/matches/{id}/events` | Create a manual event |
-| `DELETE` | `/matches/{id}/events/{event_id}` | Delete an event |
-| `GET` | `/matches/{id}/clips` | List highlight clips |
-| `GET` | `/matches/{id}/clips/{clip_id}/file` | Stream a clip |
-| `POST` | `/api/chat` | Streaming LLM chat (SSE) |
-| `GET` | `/api/health` | Health check |
