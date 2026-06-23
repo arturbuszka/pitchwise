@@ -112,3 +112,35 @@ def concat_clips(clip_paths: list[Path], out_path: Path) -> bool:
         return False
     finally:
         list_path.unlink(missing_ok=True)
+
+
+def to_hls(mp4_path: Path, out_dir: Path) -> bool:
+    """Segments an MP4 into an HLS VOD playlist (index.m3u8 + segment_*.ts) in out_dir.
+
+    Stream-copies (-c copy): concat_clips already produces H.264+AAC+faststart, so no
+    re-encode is needed — fast, and copy never invokes an encoder (sidesteps old-ffmpeg
+    'aac experimental'). These static segments are what an edge cache / CDN serves to
+    many viewers; the app server stays off the byte path.
+    """
+    if not mp4_path.exists():
+        return False
+    out_dir.mkdir(parents=True, exist_ok=True)
+    playlist = out_dir / "index.m3u8"
+    try:
+        subprocess.run(
+            [
+                "ffmpeg", "-y",
+                "-i", str(mp4_path),
+                "-c", "copy",
+                "-f", "hls",
+                "-hls_time", "4",
+                "-hls_playlist_type", "vod",
+                "-hls_flags", "independent_segments",
+                "-hls_segment_filename", str(out_dir / "segment_%03d.ts"),
+                str(playlist),
+            ],
+            capture_output=True, check=True,
+        )
+        return playlist.exists()
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return False

@@ -30,13 +30,23 @@ public class AppSettings
     // How long a generated share link stays valid.
     public int ShareLinkTtlHours { get; set; } = 24;
 
+    // --- HLS delivery (CDN-style; the API mints signed URLs, nginx serves bytes) ---
+    // Browser-facing base URL of the nginx edge that serves HLS segments.
+    public string HlsBaseUrl { get; set; } = "http://localhost:8080";
+    // Shared secret for nginx secure_link signatures. MUST match the nginx env.
+    public string HlsSigningSecret { get; set; } = "devsecret";
+    // How long a signed HLS URL stays valid.
+    public int HlsLinkTtlSeconds { get; set; } = 3600;
+
     public string UploadsDir => Path.Combine(StorageDir, "uploads");
     public string ClipsDir => Path.Combine(StorageDir, "clips");
+    public string HlsDir => Path.Combine(StorageDir, "hls");
 
     public void EnsureDirs()
     {
         Directory.CreateDirectory(StorageDir);
         Directory.CreateDirectory(UploadsDir);
         Directory.CreateDirectory(ClipsDir);
+        Directory.CreateDirectory(HlsDir);
     }
 }

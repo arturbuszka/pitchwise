@@ -80,6 +80,7 @@ public class Highlight
     public HighlightStatus Status { get; set; } = HighlightStatus.Pending;
     public double Progress { get; set; }
     public string? Filename { get; set; }
+    public bool HlsReady { get; set; }
     public string? Error { get; set; }
     public string? ShareToken { get; set; }
     public DateTime? ShareExpiresAt { get; set; }

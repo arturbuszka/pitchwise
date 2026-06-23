@@ -26,6 +26,10 @@ services:
       DATABASE_CONNECTION: "Host=postgres;Port=5432;Database=pitchwise;Username=pitchwise;Password=pitchwise"
       REDIS_URL: "redis:6379"
       STORAGE_DIR: "/app/storage"
+      # HLS signed-URL minting (must match the nginx edge secret).
+      HLS_BASE_URL: "http://localhost:8080"
+      HLS_SIGNING_SECRET: "${HLS_SIGNING_SECRET:-devsecret}"
+      HLS_LINK_TTL_SECONDS: "3600"
     volumes:
       - ./storage:/app/storage
     depends_on:
@@ -52,14 +56,38 @@ services:
       api:
         condition: service_started
 
+  # CDN-style edge: validates signed HLS URLs (secure_link) and caches segments,
+  # so the .NET API never serves video bytes. storage/hls is written by the worker
+  # and served read-only here.
+  nginx:
+    image: nginx:1.27
+    ports:
+      - "8080:80"
+    environment:
+      HLS_SIGNING_SECRET: "${HLS_SIGNING_SECRET:-devsecret}"
+      # Only substitute our secret; leave nginx runtime vars ($uri, $arg_md5, …) intact.
+      NGINX_ENVSUBST_FILTER: "HLS_SIGNING_SECRET"
+    volumes:
+      - ./storage/hls:/srv/hls:ro
+      - ./nginx/nginx.conf.template:/etc/nginx/templates/default.conf.template:ro
+    depends_on:
+      - worker
+
   web:
     build:
       context: web
       dockerfile: Dockerfile
+      # rewrites() is baked at build time (standalone) → the proxy destination must be
+      # set here, not just at runtime.
+      args:
+        API_INTERNAL_URL: http://api:8000
     ports:
       - "3000:3000"
     environment:
-      NEXT_PUBLIC_API_URL: http://localhost:8000
+      # The browser uses relative /api/* (same-origin) → Next proxy. SSR and the proxy
+      # run inside this container, so they reach the API via its service name.
+      # NEXT_PUBLIC_API_URL is intentionally empty (baked at build → relative paths).
+      API_INTERNAL_URL: http://api:8000
     depends_on:
       - api
 

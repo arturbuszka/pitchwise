@@ -22,6 +22,10 @@ settings.WebOrigin = Environment.GetEnvironmentVariable("WEB_ORIGIN") ?? setting
 settings.WebOriginAlt = Environment.GetEnvironmentVariable("WEB_ORIGIN_ALT") ?? settings.WebOriginAlt;
 settings.VisionQueue = Environment.GetEnvironmentVariable("VISION_QUEUE") ?? settings.VisionQueue;
 settings.HighlightQueue = Environment.GetEnvironmentVariable("HIGHLIGHT_QUEUE") ?? settings.HighlightQueue;
+settings.HlsBaseUrl = Environment.GetEnvironmentVariable("HLS_BASE_URL") ?? settings.HlsBaseUrl;
+settings.HlsSigningSecret = Environment.GetEnvironmentVariable("HLS_SIGNING_SECRET") ?? settings.HlsSigningSecret;
+if (int.TryParse(Environment.GetEnvironmentVariable("HLS_LINK_TTL_SECONDS"), out var hlsTtl))
+    settings.HlsLinkTtlSeconds = hlsTtl;
 settings.EnsureDirs();
 builder.Services.AddSingleton(settings);
 
@@ -33,6 +37,7 @@ builder.Services.AddSingleton<IConnectionMultiplexer>(
     _ => ConnectionMultiplexer.Connect(RedisConfig(settings.RedisUrl)));
 builder.Services.AddSingleton<VisionQueue>();
 builder.Services.AddSingleton<HighlightQueue>();
+builder.Services.AddSingleton<HlsSigner>();
 
 // --- LLM ---
 builder.Services.AddHttpClient<LlmClient>(c => c.Timeout = TimeSpan.FromSeconds(120));

@@ -110,5 +110,8 @@ public record HighlightOut(
 // Returned when creating/refreshing a share link.
 public record ShareOut(string Token, string Url, DateTime ExpiresAt);
 
+// Signed, expiring HLS manifest URL (served by the nginx edge, not the API).
+public record HlsUrlOut(string Url, DateTime ExpiresAt);
+
 // Public metadata for the share page (no analysis id leaked).
 public record SharePublicOut(string Name, HighlightStatus Status, DateTime ExpiresAt);

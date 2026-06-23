@@ -31,7 +31,7 @@ def _parse_event_ids(csv: str) -> list[int]:
 
 async def run_highlight_job(highlight_id: int) -> None:
     """Renders a highlight reel from its selected events. Runs in the worker thread."""
-    from vision.clips import concat_clips, extract_clip
+    from vision.clips import concat_clips, extract_clip, to_hls
 
     async with async_session_maker() as session:
         highlight = await session.get(Highlight, highlight_id)
@@ -97,6 +97,13 @@ async def run_highlight_job(highlight_id: int) -> None:
             highlight.status = HighlightStatus.done
             highlight.progress = 1.0
             highlight.finished_at = datetime.now(timezone.utc)
+
+            # Best-effort HLS segmentation for CDN-style delivery. If it fails, the
+            # MP4 stream still works as fallback — do NOT fail the whole job.
+            hls_dir = settings.hls_dir / str(highlight.id)
+            if to_hls(out_path, hls_dir):
+                highlight.hls_ready = True
+
             await session.commit()
 
         except Exception as exc:  # noqa: BLE001

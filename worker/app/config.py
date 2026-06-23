@@ -47,8 +47,12 @@ class Settings(BaseSettings):
     def clips_dir(self) -> Path:
         return self.storage_dir / "clips"
 
+    @property
+    def hls_dir(self) -> Path:
+        return self.storage_dir / "hls"
+
     def ensure_dirs(self) -> None:
-        for d in (self.storage_dir, self.uploads_dir, self.clips_dir):
+        for d in (self.storage_dir, self.uploads_dir, self.clips_dir, self.hls_dir):
             d.mkdir(parents=True, exist_ok=True)
 
 

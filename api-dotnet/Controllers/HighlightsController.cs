@@ -19,12 +19,14 @@ public class HighlightsController : ControllerBase
     private readonly AppDbContext _db;
     private readonly AppSettings _settings;
     private readonly HighlightQueue _queue;
+    private readonly HlsSigner _hls;
 
-    public HighlightsController(AppDbContext db, AppSettings settings, HighlightQueue queue)
+    public HighlightsController(AppDbContext db, AppSettings settings, HighlightQueue queue, HlsSigner hls)
     {
         _db = db;
         _settings = settings;
         _queue = queue;
+        _hls = hls;
     }
 
     [HttpPost("{analysisId:int}/highlights")]
@@ -79,6 +81,20 @@ public class HighlightsController : ControllerBase
         if (!System.IO.File.Exists(path)) return NotFound(new { detail = "Highlight file does not exist" });
 
         return PhysicalFile(Path.GetFullPath(path), ContentTypeFor(path), enableRangeProcessing: true);
+    }
+
+    // Mint a signed HLS manifest URL (served by the nginx edge, not the API). This is
+    // the scale path: bytes flow nginx→viewer, cached at the edge; the API only signs.
+    [HttpGet("{analysisId:int}/highlights/{id:int}/hls")]
+    public async Task<ActionResult<HlsUrlOut>> Hls(int analysisId, int id)
+    {
+        var highlight = await GetOr404(analysisId, id);
+        if (highlight is null) return NotFound(new { detail = "Highlight not found" });
+        if (!highlight.HlsReady)
+            return Conflict(new { detail = "HLS not ready" });
+
+        var (url, expiresAt) = _hls.SignHighlight(highlight.Id);
+        return new HlsUrlOut(url, expiresAt.UtcDateTime);
     }
 
     // Mint (or refresh) a time-limited public share link for a finished highlight.

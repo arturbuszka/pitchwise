@@ -1,15 +1,22 @@
 import type { NextConfig } from "next";
 
+// Where the Next server proxies /api/* to. This runs server-side (in the container
+// under compose, on the host under dev.ps1), so it must be routable from there:
+//   - compose:  http://api:8000      (docker service name)
+//   - dev host: http://localhost:8000 (default below)
+// Set API_INTERNAL_URL in the environment to override (compose does this).
+const API_INTERNAL_URL = process.env.API_INTERNAL_URL || "http://localhost:8000";
+
 const nextConfig: NextConfig = {
   output: "standalone",
-  // Fallback proxy: used only when NEXT_PUBLIC_API_URL is empty.
-  // NOTE: not suitable for large uploads (the Next.js proxy buffers the body) —
-  // that's why the frontend calls the API directly via NEXT_PUBLIC_API_URL.
+  // Proxy: the browser uses relative /api/* paths (same-origin, no CORS) which Next
+  // rewrites to the API. NOTE: the proxy buffers the body, so very large uploads are
+  // better off going direct — fine for dev/demo.
   async rewrites() {
     return [
       {
         source: "/api/:path*",
-        destination: "http://localhost:8000/api/:path*",
+        destination: `${API_INTERNAL_URL}/api/:path*`,
       },
     ];
   },

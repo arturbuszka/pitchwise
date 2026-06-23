@@ -5,6 +5,7 @@ using PitchWise.Api.Config;
 using PitchWise.Api.Data;
 using PitchWise.Api.Dtos;
 using PitchWise.Api.Models;
+using PitchWise.Api.Services;
 
 namespace PitchWise.Api.Controllers;
 
@@ -17,11 +18,13 @@ public class ShareController : ControllerBase
 {
     private readonly AppDbContext _db;
     private readonly AppSettings _settings;
+    private readonly HlsSigner _hls;
 
-    public ShareController(AppDbContext db, AppSettings settings)
+    public ShareController(AppDbContext db, AppSettings settings, HlsSigner hls)
     {
         _db = db;
         _settings = settings;
+        _hls = hls;
     }
 
     [HttpGet("{token}")]
@@ -45,6 +48,20 @@ public class ShareController : ControllerBase
         if (!System.IO.File.Exists(path)) return NotFound(new { detail = "Highlight file does not exist" });
 
         return PhysicalFile(Path.GetFullPath(path), ContentTypeFor(path), enableRangeProcessing: true);
+    }
+
+    // Signed HLS manifest URL for public viewers. This is the multi-viewer fan-out
+    // path: bytes are served by the nginx edge (cached), never by the API.
+    [HttpGet("{token}/hls")]
+    public async Task<ActionResult<HlsUrlOut>> Hls(string token)
+    {
+        var (highlight, error) = await Resolve(token);
+        if (error is not null) return error;
+        if (!highlight!.HlsReady)
+            return Conflict(new { detail = "HLS not ready" });
+
+        var (url, expiresAt) = _hls.SignHighlight(highlight.Id);
+        return new HlsUrlOut(url, expiresAt.UtcDateTime);
     }
 
     // Looks up the highlight by token, validating existence and expiry.

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { SharePublic, api } from "@/lib/api";
+import { HlsPlayer } from "./HlsPlayer";
 
 type State =
   | { kind: "loading" }
@@ -11,6 +12,7 @@ type State =
 
 export function ShareViewer({ token }: { token: string }) {
   const [state, setState] = useState<State>({ kind: "loading" });
+  const [hlsUrl, setHlsUrl] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -19,6 +21,10 @@ export function ShareViewer({ token }: { token: string }) {
       if (res.ok && res.data) setState({ kind: "ok", meta: res.data });
       else if (res.status === 410) setState({ kind: "expired" });
       else setState({ kind: "missing" });
+    });
+    // Fetch the signed HLS URL in parallel; null leaves the player on MP4 fallback.
+    api.share.hlsUrl(token).then((h) => {
+      if (!cancelled) setHlsUrl(h?.url ?? null);
     });
     return () => {
       cancelled = true;
@@ -59,8 +65,9 @@ export function ShareViewer({ token }: { token: string }) {
         <div className="w-full max-w-[900px]">
           <p className="text-[18px] font-bold mb-3 text-center">{state.meta.name}</p>
           <div className="rounded-xl overflow-hidden bg-black shadow-2xl">
-            <video
-              src={api.share.streamUrl(token)}
+            <HlsPlayer
+              hlsUrl={hlsUrl}
+              fallbackSrc={api.share.streamUrl(token)}
               controls
               autoPlay
               className="w-full max-h-[70vh] object-contain bg-black"

@@ -126,6 +126,7 @@ public class AppDbContext : DbContext
             e.Property(x => x.Status).HasColumnName("status").HasConversion(highlightStatus);
             e.Property(x => x.Progress).HasColumnName("progress");
             e.Property(x => x.Filename).HasColumnName("filename");
+            e.Property(x => x.HlsReady).HasColumnName("hls_ready");
             e.Property(x => x.Error).HasColumnName("error");
             e.Property(x => x.ShareToken).HasColumnName("share_token");
             e.Property(x => x.ShareExpiresAt).HasColumnName("share_expires_at");

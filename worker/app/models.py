@@ -188,6 +188,7 @@ class Highlight(SQLModel, table=True):
     status: HighlightStatus = Field(default=HighlightStatus.pending, sa_column=_str_enum(HighlightStatus))
     progress: float = 0.0                           # 0..1
     filename: Optional[str] = None                  # stitched file in clips_dir
+    hls_ready: bool = False                          # HLS segments produced (hls_dir/{id}/)
     error: Optional[str] = None
     share_token: Optional[str] = Field(default=None, index=True)
     share_expires_at: Optional[datetime] = Field(default=None, sa_column=_tz_dt(nullable=True))

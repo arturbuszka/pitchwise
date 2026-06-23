@@ -17,6 +17,7 @@ import {
 import { Chat } from "./Chat";
 import { QuickActions } from "./QuickActions";
 import { EventResultsPanel } from "./EventResultsPanel";
+import { HlsPlayer } from "./HlsPlayer";
 
 const SPORT_LABELS: Record<string, string> = {
   football: "⚽ Football",
@@ -48,6 +49,7 @@ export function AnalysisDetailClient({
   // Highlight creation
   const [selectedEvents, setSelectedEvents] = useState<Set<number>>(new Set());
   const [highlight, setHighlight] = useState<Highlight | null>(null);
+  const [highlightHlsUrl, setHighlightHlsUrl] = useState<string | null>(null);
   const [shareUrl, setShareUrl] = useState<string | null>(null);
   const [shareCopied, setShareCopied] = useState(false);
 
@@ -152,6 +154,21 @@ export function AnalysisDetailClient({
     return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [highlight, analysis.id]);
+
+  // Once the highlight is done, fetch its signed HLS URL (edge-served). null → MP4 fallback.
+  useEffect(() => {
+    if (highlight?.status !== "done") {
+      setHighlightHlsUrl(null);
+      return;
+    }
+    let cancelled = false;
+    api.analyses.highlights.hlsUrl(analysis.id, highlight.id).then((h) => {
+      if (!cancelled) setHighlightHlsUrl(h?.url ?? null);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [highlight?.status, highlight?.id, analysis.id]);
 
   async function handleUpload(file: File) {
     setBusy(true);
@@ -410,9 +427,10 @@ export function AnalysisDetailClient({
 
                 {highlight.status === "done" && (
                   <>
-                    <video
+                    <HlsPlayer
                       key={highlight.id}
-                      src={api.analyses.highlights.streamUrl(analysis.id, highlight.id)}
+                      hlsUrl={highlightHlsUrl}
+                      fallbackSrc={api.analyses.highlights.streamUrl(analysis.id, highlight.id)}
                       controls
                       autoPlay
                       className="w-full max-h-[340px] object-contain bg-black rounded-lg"
