@@ -10,6 +10,10 @@ CLASS_BALL = "ball"
 CLASS_PLAYER = "player"
 CLASS_GOALKEEPER = "goalkeeper"
 CLASS_REFEREE = "referee"
+# Hak pod Etap 2: detekcja bramki (słupki/siatka). Nieaktywne dopóki model nie
+# zwraca tej klasy — wtedy events.py użyje przecięcia linii bramkowej jako mocnego
+# sygnału zamiast samej heurystyki ruchu piłki.
+CLASS_GOAL = "goal"
 
 
 @dataclass

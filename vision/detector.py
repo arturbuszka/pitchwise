@@ -12,6 +12,7 @@ from collections.abc import Iterator
 
 from vision.types import (
     CLASS_BALL,
+    CLASS_GOAL,
     CLASS_PLAYER,
     CLASS_REFEREE,
     Detection,
@@ -27,6 +28,9 @@ _CLASS_ALIASES = {
     "person": CLASS_PLAYER,
     "referee": CLASS_REFEREE,
     "goalkeeper": "goalkeeper",
+    # Hak pod Etap 2: aktywne tylko gdy model piłkarski zwraca klasę bramki.
+    "goal": CLASS_GOAL,
+    "goalpost": CLASS_GOAL,
 }
 
 
