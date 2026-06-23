@@ -147,8 +147,8 @@ export const api = {
         fd.append("name", name);
         return fetch(`${API}/api/analyses/${analysisId}/videos`, { method: "POST", body: fd }).then((r) => r.json());
       },
-      // Upload z postępem (XHR) — fetch nie raportuje progresu wysyłania.
-      // Zalecane dla dużych plików (do ~2GB). onProgress dostaje 0..1.
+      // Upload with progress (XHR) — fetch does not report upload progress.
+      // Recommended for large files (up to ~2GB). onProgress receives 0..1.
       uploadWithProgress: (
         analysisId: number,
         file: File,
@@ -169,13 +169,13 @@ export const api = {
               try {
                 resolve(JSON.parse(xhr.responseText) as VideoItem);
               } catch {
-                reject(new Error("Nieprawidłowa odpowiedź serwera"));
+                reject(new Error("Invalid server response"));
               }
             } else {
-              reject(new Error(`Upload nieudany (HTTP ${xhr.status})`));
+              reject(new Error(`Upload failed (HTTP ${xhr.status})`));
             }
           };
-          xhr.onerror = () => reject(new Error("Błąd sieci podczas uploadu"));
+          xhr.onerror = () => reject(new Error("Network error during upload"));
           xhr.send(fd);
         }),
       streamUrl: (analysisId: number, videoId: number) =>

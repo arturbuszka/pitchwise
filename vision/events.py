@@ -1,33 +1,32 @@
-"""Heurystyka detekcji eventów (gol / strzał) — analiza trajektorii piłki.
+"""Event detection heuristics (goal / shot) — based on ball trajectory analysis.
 
-UWAGA (z planu): to NAJTRUDNIEJSZY i najbardziej iteracyjny element. Świadomie
-zostajemy przy regułach (bez homografii boiska), bo materiał jest różnorodny
-(pełne nagrania, krótkie ucinki, telefon, TV) — homografia wymaga widocznych
-linii boiska i ciągłości kamery, czego ucinki nie dają. Ręczne tagowanie w UI
-jest fallbackiem, gdy ta detekcja się myli.
+NOTE: this is the hardest and most iterative part of the pipeline. We deliberately
+stick to rule-based heuristics (no pitch homography) because the footage is highly
+varied (full recordings, short clips, phone, TV) — homography requires visible pitch
+lines and camera continuity, which short clips do not provide. Manual tagging in the
+UI is the fallback when this detection gets it wrong.
 
-Kluczowa zmiana względem MVP: pracujemy na WYGŁADZONEJ TRAJEKTORII piłki, a nie
-na surowych próbkach klatka-do-klatki. Pojedyncze błędne/brakujące detekcje YOLO
-(domyślny yolo11n gubi małą, szybką piłkę) były głównym źródłem false-positive
-"piłka znika => gol". Dlatego:
-- interpolujemy krótkie luki w detekcji (≤ max_gap_frames),
-- liczymy prędkość ze średniej ruchomej (smooth_window),
-- odrzucamy detekcje o niskim confidence.
+Key change over the MVP: we operate on a SMOOTHED ball trajectory rather than on raw
+frame-to-frame samples. Single wrong/missing YOLO detections (the default yolo11n
+loses the small, fast ball) were the main source of the "ball disappears => goal"
+false positive. Therefore we:
+- interpolate short detection gaps (<= max_gap_frames),
+- compute speed from a moving average (smooth_window),
+- drop low-confidence detections.
 
-Reguły (bez kalibracji boiska):
-- "goal": gwałtowne przyspieszenie + ruch piłki KU KRAWĘDZI kadru + faktyczny
-  zanik piłki PO osiągnięciu strefy przykrawędziowej. Zanik w centrum kadru to
-  najczęściej błąd detekcji, nie gol — i właśnie ten przypadek odrzucamy.
-- "shot": duża dynamika piłki bez zaniku przy krawędzi — słabszy sygnał, kandydat
-  na strzał/zagranie o dużej dynamice.
+Rules (without pitch calibration):
+- "goal": sharp acceleration + ball moving TOWARD the frame edge + the ball actually
+  disappearing AFTER reaching the edge zone. Disappearance in the center of the frame
+  is usually a detection error, not a goal — and that case is exactly what we reject.
+- "shot": high ball dynamics without disappearance near the edge — a weaker signal, a
+  candidate for a shot/high-dynamics play.
 
-`confidence` odzwierciedla liczbę spełnionych czynników, żeby UI mogło sortować
-i filtrować kandydatów. Wszystkie progi są parametrami — do strojenia na realnym
-materiale.
+`confidence` reflects the number of satisfied factors so the UI can sort and filter
+candidates. All thresholds are parameters — to be tuned on real footage.
 
-Etap 2 (przyszłość): gdy model będzie zwracał klasę bramki (CLASS_GOAL), warunek
-"przecięcie linii bramkowej" wejdzie jako mocny sygnał, a ta heurystyka zostanie
-fallbackiem gdy bramki nie widać w kadrze.
+Stage 2 (future): once the model returns a goal class (CLASS_GOAL), a "goal line
+crossing" condition will become a strong signal, and this heuristic will become the
+fallback when the goal is not visible in frame.
 """
 from dataclasses import dataclass
 
@@ -36,32 +35,32 @@ from vision.types import DetectedEvent, FrameResult
 
 @dataclass
 class EventConfig:
-    # --- detekcja "spike'u" prędkości ---
-    speed_spike_factor: float = 3.0     # ile razy ponad medianę prędkości = "spike"
-    min_speed_px: float = 25.0          # minimalna prędkość (px/próbkę) by liczyć
-    cooldown_seconds: float = 8.0       # min. odstęp między eventami tego samego typu
+    # --- speed "spike" detection ---
+    speed_spike_factor: float = 3.0     # how many times above median speed counts as a "spike"
+    min_speed_px: float = 25.0          # minimum speed (px/sample) to count
+    cooldown_seconds: float = 8.0       # min gap between events of the same type
 
-    # --- jakość trajektorii (redukcja szumu z błędnych detekcji YOLO) ---
-    max_gap_frames: int = 2             # interpoluj luki w detekcji piłki ≤ tylu próbek
-    smooth_window: int = 3              # okno średniej ruchomej dla prędkości
-    min_ball_confidence: float = 0.3    # ignoruj słabe detekcje piłki przy budowie toru
+    # --- trajectory quality (noise reduction from wrong YOLO detections) ---
+    max_gap_frames: int = 2             # interpolate ball detection gaps <= this many samples
+    smooth_window: int = 3              # moving-average window for speed
+    min_ball_confidence: float = 0.3    # ignore weak ball detections when building the track
 
-    # --- reguła "gola" przy krawędzi kadru (proxy bramki bez homografii) ---
-    ball_lost_frames: int = 4           # ile próbek bez piłki po spike'u => zanik
-    edge_zone_frac: float = 0.15        # strefa przykrawędziowa = ten ułamek szer./wys. kadru
-    direction_consistency: float = 0.6  # min. zgodność kierunku ruchu ku krawędzi (0..1)
+    # --- frame-edge "goal" rule (goal proxy without homography) ---
+    ball_lost_frames: int = 4           # samples without the ball after a spike => disappearance
+    edge_zone_frac: float = 0.15        # edge zone = this fraction of frame width/height
+    direction_consistency: float = 0.6  # min consistency of motion toward the edge (0..1)
 
-    # --- hak pod Etap 2 (detekcja bramki) ---
-    # require_goal_line_cross: bool = False  # gdy model zwraca CLASS_GOAL, wymuś przecięcie linii
+    # --- hook for Stage 2 (goal detection) ---
+    # require_goal_line_cross: bool = False  # when the model returns CLASS_GOAL, force line crossing
 
 
 @dataclass
 class _Sample:
-    """Próbka toru piłki po interpolacji luk — pozycja środka i znacznik czasu."""
-    index: int                          # indeks w oryginalnej liście frames
+    """A ball-track sample after gap interpolation — center position and timestamp."""
+    index: int                          # index in the original frames list
     timestamp_seconds: float
     center: tuple[float, float]
-    interpolated: bool = False          # True = pozycja wyliczona, nie wykryta
+    interpolated: bool = False          # True = position computed, not detected
 
 
 def _ball_center(fr: FrameResult, min_conf: float) -> tuple[float, float] | None:
@@ -73,22 +72,22 @@ def _ball_center(fr: FrameResult, min_conf: float) -> tuple[float, float] | None
 
 
 def _frame_size(frames: list[FrameResult]) -> tuple[float, float]:
-    """Szacuje rozmiar kadru z maksymalnych współrzędnych detekcji (brak metadanych
-    o rozdzielczości w FrameResult). Wystarcza do wyznaczenia strefy przykrawędziowej."""
+    """Estimates the frame size from the maximum detection coordinates (FrameResult has
+    no resolution metadata). Good enough to derive the edge zone."""
     max_x = max_y = 0.0
     for fr in frames:
         for d in fr.detections:
             _, _, x2, y2 = d.xyxy
             max_x = max(max_x, x2)
             max_y = max(max_y, y2)
-    # zabezpieczenie, gdy brak detekcji
+    # fallback when there are no detections
     return (max_x or 1920.0, max_y or 1080.0)
 
 
 def _build_track(frames: list[FrameResult], cfg: EventConfig) -> list[_Sample]:
-    """Buduje wygładzony tor piłki: zbiera wykrycia (powyżej progu confidence)
-    i interpoluje liniowo krótkie luki (≤ max_gap_frames), by chwilowe zgubienie
-    przez YOLO nie wyglądało jak "piłka znika"."""
+    """Builds a smoothed ball track: collects detections (above the confidence threshold)
+    and linearly interpolates short gaps (<= max_gap_frames), so that a brief loss by
+    YOLO does not look like "the ball disappears"."""
     raw: list[_Sample] = []
     for i, fr in enumerate(frames):
         c = _ball_center(fr, cfg.min_ball_confidence)
@@ -102,7 +101,7 @@ def _build_track(frames: list[FrameResult], cfg: EventConfig) -> list[_Sample]:
     for prev, cur in zip(raw, raw[1:]):
         gap = cur.index - prev.index - 1
         if 0 < gap <= cfg.max_gap_frames:
-            # interpolacja liniowa pozycji w brakujących klatkach
+            # linear interpolation of position in the missing frames
             for k in range(1, gap + 1):
                 t = k / (gap + 1)
                 cx = prev.center[0] + (cur.center[0] - prev.center[0]) * t
@@ -121,8 +120,8 @@ def _build_track(frames: list[FrameResult], cfg: EventConfig) -> list[_Sample]:
 
 
 def _smoothed_speeds(track: list[_Sample], window: int) -> list[float]:
-    """Prędkość między kolejnymi próbkami toru, wygładzona średnią ruchomą —
-    usuwa szum drgań bounding-boxa."""
+    """Speed between consecutive track samples, smoothed with a moving average —
+    removes bounding-box jitter noise."""
     raw: list[float] = [0.0]
     for prev, cur in zip(track, track[1:]):
         dx = cur.center[0] - prev.center[0]
@@ -146,8 +145,8 @@ def _moves_toward_edge(
     frame_size: tuple[float, float],
     cfg: EventConfig,
 ) -> tuple[bool, bool]:
-    """Czy w okolicy próbki `pos` piłka konsekwentnie zmierza ku krawędzi kadru i
-    czy kończy w strefie przykrawędziowej. Zwraca (kieruje_się_ku_krawędzi, w_strefie)."""
+    """Whether around sample `pos` the ball consistently moves toward the frame edge and
+    whether it ends up in the edge zone. Returns (moves_toward_edge, in_zone)."""
     w, h = frame_size
     last = track[pos]
     lx, ly = last.center
@@ -159,8 +158,8 @@ def _moves_toward_edge(
         or ly >= h * (1 - cfg.edge_zone_frac)
     )
 
-    # zgodność kierunku: jaki ułamek z ostatnich kroków zbliżał piłkę do najbliższej
-    # krawędzi poziomej (bramki są przy krawędziach bocznych kadru typowego ujęcia).
+    # direction consistency: what fraction of the last steps moved the ball closer to the
+    # nearest horizontal edge (goals sit at the side edges of a typical shot).
     lookback = track[max(0, pos - cfg.smooth_window - 1) : pos + 1]
     if len(lookback) < 2:
         return (False, in_zone)
@@ -213,8 +212,8 @@ def detect_events(
             continue
         ts = sample.timestamp_seconds
 
-        # po spike'u: ile próbek bez WYKRYTEJ piłki (interpolowane się skończyły,
-        # bo luki > max_gap_frames nie są uzupełniane) — czyli realny zanik.
+        # after a spike: how many samples without a DETECTED ball (interpolated ones ran
+        # out, because gaps > max_gap_frames are not filled) — i.e. a real disappearance.
         last_index = sample.index
         lost = 0
         for fr in frames[last_index + 1 : last_index + 1 + cfg.ball_lost_frames + 2]:
@@ -226,29 +225,30 @@ def detect_events(
 
         toward_edge, in_zone = _moves_toward_edge(track, pos, frame_size, cfg)
 
-        # --- scoring "gola" (wieloczynnikowy, każdy czynnik podnosi confidence) ---
+        # --- "goal" scoring (multi-factor, each factor raises confidence) ---
         if disappeared and in_zone:
-            score = 0.4                                  # baza: spike + zanik w strefie
+            score = 0.4                                  # base: spike + disappearance in zone
             if toward_edge:
-                score += 0.3                             # konsekwentny ruch ku krawędzi
-            score += min(0.2, speed / (threshold * 4))   # im mocniejszy spike, tym pewniej
+                score += 0.3                             # consistent motion toward the edge
+            score += min(0.2, speed / (threshold * 4))   # the stronger the spike, the more certain
             _emit(
                 "goal",
                 ts,
                 conf=min(0.95, score),
-                label="kandydat: gol (przyspieszenie + ruch ku krawędzi + zanik piłki)",
+                label="candidate: goal (acceleration + motion toward edge + ball disappearance)",
             )
         elif disappeared and not in_zone:
-            # zanik w centrum kadru = najpewniej błąd detekcji, nie gol. Świadomie
-            # NIE emitujemy "goal" — to główna regresja false-positive względem MVP.
+            # disappearance in the center of the frame is most likely a detection error,
+            # not a goal. We deliberately do NOT emit "goal" — this is the main
+            # false-positive regression relative to the MVP.
             continue
         else:
-            # duża dynamika bez zaniku przy krawędzi => kandydat na strzał.
+            # high dynamics without disappearance near the edge => shot candidate.
             _emit(
                 "shot",
                 ts,
                 conf=min(0.5, speed / (threshold * 3)),
-                label="kandydat: strzał (przyspieszenie piłki)",
+                label="candidate: shot (ball acceleration)",
             )
 
     return events

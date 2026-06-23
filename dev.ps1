@@ -1,26 +1,26 @@
 $root = $PSScriptRoot
 
-# Wspolny katalog storage - .NET API zapisuje uploady, worker je czyta. MUSI byc ten sam.
+# Shared storage directory - the .NET API writes uploads, the worker reads them. MUST be the same.
 $storage = "$root\storage"
 
-# Infrastruktura: Postgres (wspolna baza) + Redis (kolejka jobow).
-Write-Host "Startuje infrastrukture (Postgres + Redis)..."
+# Infrastructure: Postgres (shared database) + Redis (job queue).
+Write-Host "Starting infrastructure (Postgres + Redis)..."
 docker compose -f "$root\docker-compose.infra.yml" up -d | Out-Null
 
-# .NET API (:8000) - tworzy schemat DB, ten sam port co dawniej (front bez zmian).
+# .NET API (:8000) - creates the DB schema, listens on port 8000.
 Start-Process powershell -ArgumentList "-NoExit", "-Command", "
     Set-Location '$root\api-dotnet';
     `$env:STORAGE_DIR='$storage';
     dotnet run
 " -WindowStyle Normal
 
-# Worker Python (vision) - zdejmuje joby z Redis (BRPOP), pisze do wspolnego Postgresa.
-# Tworzy .venv i instaluje zaleznosci przy pierwszym uruchomieniu. Wola python.exe z
-# venv bezposrednio (pewniejsze niz activate).
+# Python worker (vision) - pops jobs from Redis (BRPOP), writes to the shared Postgres.
+# Creates .venv and installs dependencies on first run. Calls the venv's python.exe
+# directly (more reliable than activate).
 Start-Process powershell -ArgumentList "-NoExit", "-Command", "
     Set-Location '$root\worker';
     if (-not (Test-Path .venv)) {
-        Write-Host 'Tworze .venv i instaluje zaleznosci (ultralytics/torch - chwile potrwa)...';
+        Write-Host 'Creating .venv and installing dependencies (ultralytics/torch - this takes a while)...';
         python -m venv .venv;
         .\.venv\Scripts\python.exe -m pip install --upgrade pip;
         .\.venv\Scripts\python.exe -m pip install -r requirements.txt;
@@ -31,14 +31,14 @@ Start-Process powershell -ArgumentList "-NoExit", "-Command", "
     .\.venv\Scripts\python.exe -m app.worker
 " -WindowStyle Normal
 
-# Frontend (:3000) - NEXT_PUBLIC_API_URL nadal wskazuje http://localhost:8000.
+# Frontend (:3000) - NEXT_PUBLIC_API_URL points to http://localhost:8000.
 Start-Process powershell -ArgumentList "-NoExit", "-Command", "
     Set-Location '$root\web';
     npm run dev
 " -WindowStyle Normal
 
-Write-Host "Uruchomiono:"
+Write-Host "Started:"
 Write-Host "  API (.NET)      -> http://localhost:8000"
-Write-Host "  Worker (Python) -> nasluch kolejki Redis 'vision_jobs'"
+Write-Host "  Worker (Python) -> listening on the Redis 'vision_jobs' queue"
 Write-Host "  Web             -> http://localhost:3000"
 Write-Host "  Postgres        -> localhost:5432   Redis -> localhost:6379"

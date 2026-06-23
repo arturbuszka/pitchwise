@@ -9,14 +9,14 @@ class Settings(BaseSettings):
 
     # Storage / DB
     storage_dir: Path = Path("./storage")
-    # Postgres (worker Python + .NET API dzielą tę samą bazę). Schemat tworzy .NET.
+    # Postgres (the Python worker and the .NET API share the same database). .NET owns the schema.
     database_url: str = (
         "postgresql+asyncpg://pitchwise:pitchwise@localhost:5432/pitchwise"
     )
 
-    # Kolejka
+    # Queue
     redis_url: str = "redis://localhost:6379"
-    analysis_inline: bool = False  # True = analiza w request, bez Redis/workera (dev/MVP)
+    analysis_inline: bool = False  # True = analyze inside the request, no Redis/worker (dev/MVP)
 
     # LLM (provider-agnostic: OpenAI-compatible chat API)
     llm_provider: str = "openai"
@@ -26,11 +26,11 @@ class Settings(BaseSettings):
 
     # Vision
     yolo_model_path: str = ""
-    # Co którą klatkę analizujemy. Mniejszy stride = gęstszy tor piłki (lepsza
-    # detekcja eventów przy szybkim ruchu/zbliżeniach), ale wolniejsza analiza.
-    # 3 to kompromis; podnieś (np. 5) dla długich nagrań, gdzie liczy się czas.
+    # Which frames to analyze. A smaller stride = a denser ball track (better event
+    # detection on fast motion/close-ups) but slower analysis. 3 is a compromise; raise
+    # it (e.g. 5) for long recordings where time matters.
     frame_stride: int = 3
-    generate_clips: bool = False  # wycinanie klipów per event — wyłączone na tym etapie (GENERATE_CLIPS=1 by włączyć)
+    generate_clips: bool = False  # per-event clip extraction — disabled for now (set GENERATE_CLIPS=1 to enable)
     clip_pre_seconds: float = 6.0
     clip_post_seconds: float = 4.0
 
@@ -38,7 +38,7 @@ class Settings(BaseSettings):
     web_origin: str = "http://localhost:3000"
     web_origin_alt: str = "http://localhost:3001"
 
-    # --- ścieżki pochodne ---
+    # --- derived paths ---
     @property
     def uploads_dir(self) -> Path:
         return self.storage_dir / "uploads"

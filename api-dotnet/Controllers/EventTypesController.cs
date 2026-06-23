@@ -4,7 +4,7 @@ using PitchWise.Api.Dtos;
 
 namespace PitchWise.Api.Controllers;
 
-// Odpowiednik worker/app/routers/event_types.py. Parametr sport jest ignorowany (jak dziś).
+// Mirror of worker/app/routers/event_types.py. The sport parameter is ignored (as before).
 [ApiController]
 [Route("api/event-types")]
 public class EventTypesController : ControllerBase

@@ -1,26 +1,26 @@
 # --- API ---
 fastapi>=0.115
 uvicorn[standard]>=0.32
-python-multipart>=0.0.12          # uploady plików
+python-multipart>=0.0.12          # file uploads
 pydantic>=2.9
 pydantic-settings>=2.6
 
 # --- DB ---
 sqlmodel>=0.0.22
-asyncpg>=0.29                     # async PostgreSQL (worker + .NET API dzielą tę bazę)
+asyncpg>=0.29                     # async PostgreSQL (worker + .NET API share this database)
 
-# --- Kolejka zadań ---
-redis>=5.2                        # goła lista Redis (BRPOP) — arq wycofane na rzecz worker.py
+# --- Task queue ---
+redis>=5.2                        # plain Redis list (BRPOP) — arq dropped in favor of worker.py
 
-# --- LLM (provider-agnostic: OpenAI-compatible chat API przez HTTP) ---
+# --- LLM (provider-agnostic: OpenAI-compatible chat API over HTTP) ---
 httpx>=0.27
 
-# --- Testy (dev) ---
+# --- Tests (dev) ---
 pytest>=8.0
 
-# --- Vision (cięższe; instalacja może chwilę zająć) ---
+# --- Vision (heavier; installation may take a while) ---
 ultralytics>=8.3                  # YOLO11
 supervision>=0.25                 # ByteTrack, annotators
 opencv-python-headless>=4.10
 numpy>=1.26
-ffmpeg-python>=0.2                # wrapper na ffmpeg CLI (ffmpeg musi być w PATH)
+ffmpeg-python>=0.2                # wrapper around the ffmpeg CLI (ffmpeg must be on PATH)

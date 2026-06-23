@@ -9,16 +9,16 @@ using PitchWise.Api.Services;
 
 namespace PitchWise.Api.Controllers;
 
-// Odpowiednik worker/app/routers/analyses.py: CRUD sesji, zdarzenia, chat (SSE).
+// Mirror of worker/app/routers/analyses.py: session CRUD, events, chat (SSE).
 [ApiController]
 [Route("api/analyses")]
 public class AnalysesController : ControllerBase
 {
     private const string ChatSystem =
-        "Jesteś asystentem analitycznym dla sztabu trenerskiego. " +
-        "Odpowiadasz zwięźle i konkretnie po polsku, opierając się na dostarczonym " +
-        "kontekście sesji analitycznej (wykryte i otagowane zdarzenia). " +
-        "Gdy danych brakuje, mów to wprost.";
+        "You are an analytics assistant for a coaching staff. " +
+        "Answer concisely and to the point in English, based on the provided " +
+        "analysis session context (detected and tagged events). " +
+        "When data is missing, say so directly.";
 
     private readonly AppDbContext _db;
     private readonly AppSettings _settings;
@@ -74,7 +74,7 @@ public class AnalysesController : ControllerBase
     public async Task<ActionResult<AnalysisDetail>> GetAnalysis(int analysisId)
     {
         var obj = await _db.AnalysisSessions.FindAsync(analysisId);
-        if (obj is null) return NotFound(new { detail = "Analiza nie znaleziona" });
+        if (obj is null) return NotFound(new { detail = "Analysis not found" });
 
         var videos = await _db.Videos
             .Where(v => v.AnalysisId == analysisId)
@@ -93,7 +93,7 @@ public class AnalysesController : ControllerBase
     public async Task<ActionResult<List<EventOut>>> ListEvents(int analysisId, [FromQuery] EventType? type)
     {
         if (!await _db.AnalysisSessions.AnyAsync(a => a.Id == analysisId))
-            return NotFound(new { detail = "Analiza nie znaleziona" });
+            return NotFound(new { detail = "Analysis not found" });
 
         var q = _db.Events.Where(e => e.AnalysisId == analysisId);
         if (type is not null)
@@ -110,13 +110,13 @@ public class AnalysesController : ControllerBase
     public async Task<ActionResult<EventOut>> CreateEvent(int analysisId, [FromBody] EventCreate payload)
     {
         var session = await _db.AnalysisSessions.FindAsync(analysisId);
-        if (session is null) return NotFound(new { detail = "Analiza nie znaleziona" });
+        if (session is null) return NotFound(new { detail = "Analysis not found" });
 
         if (payload.VideoId is not null)
         {
             var video = await _db.Videos.FindAsync(payload.VideoId.Value);
             if (video is null || video.AnalysisId != analysisId)
-                return BadRequest(new { detail = "video_id nie należy do tej analizy" });
+                return BadRequest(new { detail = "video_id does not belong to this analysis" });
         }
 
         var ev = new Event
@@ -144,7 +144,7 @@ public class AnalysesController : ControllerBase
     {
         var ev = await _db.Events.FindAsync(eventId);
         if (ev is null || ev.AnalysisId != analysisId)
-            return NotFound(new { detail = "Event nie znaleziony" });
+            return NotFound(new { detail = "Event not found" });
 
         var clips = await _db.Clips.Where(c => c.EventId == eventId).ToListAsync();
         foreach (var clip in clips)
@@ -167,14 +167,14 @@ public class AnalysesController : ControllerBase
         if (session is null)
         {
             Response.StatusCode = 404;
-            await Response.WriteAsJsonAsync(new { detail = "Analiza nie znaleziona" });
+            await Response.WriteAsJsonAsync(new { detail = "Analysis not found" });
             return;
         }
 
         var context = await BuildAnalysisContext(analysisId);
         var system = string.IsNullOrEmpty(context)
             ? ChatSystem
-            : $"{ChatSystem}\n\nKontekst analizy:\n{context}";
+            : $"{ChatSystem}\n\nAnalysis context:\n{context}";
 
         var messages = req.Messages.Select(m => (m.Role, m.Content)).ToList();
 
@@ -191,7 +191,7 @@ public class AnalysesController : ControllerBase
         }
         catch (Exception exc)
         {
-            await Response.WriteAsync($"data: [błąd LLM: {exc.GetType().Name}]\n\n", ct);
+            await Response.WriteAsync($"data: [LLM error: {exc.GetType().Name}]\n\n", ct);
         }
         await Response.WriteAsync("data: [DONE]\n\n", ct);
         await Response.Body.FlushAsync(ct);
@@ -224,32 +224,32 @@ public class AnalysesController : ControllerBase
             .ToListAsync();
 
         var lines = new List<string>();
-        var head = $"Analiza: {session.Name} ({session.Sport}).";
+        var head = $"Analysis: {session.Name} ({session.Sport}).";
         if (!string.IsNullOrEmpty(session.Subtitle)) head += $" {session.Subtitle}";
         lines.Add(head);
 
         if (events.Count > 0)
         {
-            lines.Add($"Zdarzenia ({events.Count}):");
+            lines.Add($"Events ({events.Count}):");
             foreach (var e in events)
             {
                 var total = (int)e.TimestampSeconds;
                 var mm = total / 60;
                 var ss = total % 60;
-                var conf = e.Confidence is not null ? $", pewność {e.Confidence.Value:P0}" : "";
+                var conf = e.Confidence is not null ? $", confidence {e.Confidence.Value:P0}" : "";
                 var player = "";
                 if (!string.IsNullOrEmpty(e.PlayerName))
                     player = e.PlayerNumber is not null ? $" #{e.PlayerNumber} {e.PlayerName}" : $" {e.PlayerName}";
                 var assist = "";
                 if (!string.IsNullOrEmpty(e.AssistName))
-                    assist = e.AssistNumber is not null ? $" (asysta #{e.AssistNumber} {e.AssistName})" : $" (asysta {e.AssistName})";
+                    assist = e.AssistNumber is not null ? $" (assist #{e.AssistNumber} {e.AssistName})" : $" (assist {e.AssistName})";
                 var note = !string.IsNullOrEmpty(e.Note) ? $" — {e.Note}" : "";
                 lines.Add($"- {mm:D2}:{ss:D2} {EventTypeMap.ToDb(e.Type)} ({(e.Source == EventSource.Auto ? "auto" : "manual")}{conf}){player}{assist}{note}".TrimEnd());
             }
         }
         else
         {
-            lines.Add("Brak wykrytych/otagowanych zdarzeń.");
+            lines.Add("No detected/tagged events.");
         }
         return string.Join("\n", lines);
     }

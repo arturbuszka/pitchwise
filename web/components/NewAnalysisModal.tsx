@@ -7,9 +7,9 @@ import { api } from "@/lib/api";
 type Sport = "football" | "basketball" | "handball";
 
 const SPORTS: { key: Sport; label: string }[] = [
-  { key: "football", label: "⚽ Piłka nożna" },
-  { key: "basketball", label: "🏀 Koszykówka" },
-  { key: "handball", label: "🤾 Ręczna" },
+  { key: "football", label: "⚽ Football" },
+  { key: "basketball", label: "🏀 Basketball" },
+  { key: "handball", label: "🤾 Handball" },
 ];
 
 export function NewAnalysisModal({ onClose }: { onClose: () => void }) {
@@ -30,7 +30,7 @@ export function NewAnalysisModal({ onClose }: { onClose: () => void }) {
       await api.analyses.videos.upload(analysis.id, file, file.name);
       router.push(`/analyses/${analysis.id}`);
     } catch {
-      setError("Nie udało się utworzyć analizy. Spróbuj ponownie.");
+      setError("Failed to create the analysis. Please try again.");
       setLoading(false);
     }
   }
@@ -47,9 +47,9 @@ export function NewAnalysisModal({ onClose }: { onClose: () => void }) {
       <div className="relative bg-white rounded-2xl w-full max-w-[480px] mx-4 p-7 shadow-2xl flex flex-col gap-5">
         <div className="flex items-start justify-between">
           <div>
-            <h2 className="text-[23px] font-black leading-tight">Nowa analiza</h2>
+            <h2 className="text-[23px] font-black leading-tight">New analysis</h2>
             <p className="text-[13px] text-[#9aa0a8] font-medium mt-0.5">
-              Nazwij analizę i wybierz dyscyplinę
+              Name the analysis and pick a sport
             </p>
           </div>
           <button
@@ -63,13 +63,13 @@ export function NewAnalysisModal({ onClose }: { onClose: () => void }) {
         {/* Title */}
         <div className="flex flex-col gap-1.5">
           <label className="text-[13px] font-semibold text-[#374151]">
-            Nazwa analizy
+            Analysis name
           </label>
           <input
             type="text"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
-            placeholder="np. Mecz: Orły vs Sokoły"
+            placeholder="e.g. Match: Eagles vs Falcons"
             className="border border-[#e4e7ec] rounded-[10px] px-3 py-3 text-[15px] text-[#374151] focus:outline-none focus:border-[#2f5fe0] focus:ring-2 focus:ring-[#2f5fe0]/12 transition-shadow"
           />
         </div>
@@ -77,7 +77,7 @@ export function NewAnalysisModal({ onClose }: { onClose: () => void }) {
         {/* Sport chips */}
         <div className="flex flex-col gap-1.5">
           <label className="text-[13px] font-semibold text-[#374151]">
-            Dyscyplina
+            Sport
           </label>
           <div className="flex gap-2 flex-wrap">
             {SPORTS.map((s) => (
@@ -99,7 +99,7 @@ export function NewAnalysisModal({ onClose }: { onClose: () => void }) {
         {/* File upload */}
         <div className="flex flex-col gap-1.5">
           <label className="text-[13px] font-semibold text-[#374151]">
-            Plik wideo
+            Video file
           </label>
           <div
             onClick={() => fileRef.current?.click()}
@@ -109,7 +109,7 @@ export function NewAnalysisModal({ onClose }: { onClose: () => void }) {
               <p className="text-sm font-medium text-[#14181f]">{file.name}</p>
             ) : (
               <p className="text-sm text-[#9aa0a8]">
-                Kliknij, aby wybrać plik (.mp4, .mov, .mkv, .avi)
+                Click to choose a file (.mp4, .mov, .mkv, .avi)
               </p>
             )}
             <input
@@ -130,14 +130,14 @@ export function NewAnalysisModal({ onClose }: { onClose: () => void }) {
             onClick={onClose}
             className="border border-[#e4e7ec] bg-white rounded-[10px] px-4 py-2.5 text-[14px] font-semibold text-[#374151] hover:bg-[#f7f8fa] transition-colors"
           >
-            Anuluj
+            Cancel
           </button>
           <button
             onClick={handleSubmit}
             disabled={!file || loading}
             className="bg-[#2f5fe0] hover:bg-[#2451c7] disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-[10px] px-5 py-2.5 text-[14px] font-semibold transition-colors shadow-sm"
           >
-            {loading ? "Tworzenie…" : "Utwórz i otwórz →"}
+            {loading ? "Creating…" : "Create and open →"}
           </button>
         </div>
       </div>

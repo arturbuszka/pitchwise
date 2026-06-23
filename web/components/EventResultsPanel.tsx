@@ -3,9 +3,9 @@
 import { AnalysisEvent, EventType, EventTypeConfig, formatTime } from "@/lib/api";
 
 function confColor(conf: number): string {
-  if (conf >= 0.8) return "#16a34a"; // zielony — wysoka
-  if (conf >= 0.5) return "#e0a72f"; // żółty — średnia
-  return "#ef4444"; // czerwony — niska
+  if (conf >= 0.8) return "#16a34a"; // green — high
+  if (conf >= 0.5) return "#e0a72f"; // amber — medium
+  return "#ef4444"; // red — low
 }
 
 function playerLabel(ev: AnalysisEvent): string {
@@ -19,7 +19,7 @@ function playerLabel(ev: AnalysisEvent): string {
     const assist = ev.assist_number
       ? `#${ev.assist_number} ${ev.assist_name ?? ""}`.trim()
       : (ev.assist_name ?? "");
-    parts.push(`(asysta ${assist})`);
+    parts.push(`(assist ${assist})`);
   }
   return parts.join(" ");
 }
@@ -42,13 +42,13 @@ export function EventResultsPanel({
       ? events
       : events.filter((e) => activeFilters.has(e.type));
 
-  // Nagłówek dynamiczny
-  let heading = "Wyniki";
+  // Dynamic heading
+  let heading = "Results";
   if (activeFilters.size === 1) {
     const only = [...activeFilters][0];
-    heading = cfg.get(only)?.label ?? "Wyniki";
+    heading = cfg.get(only)?.label ?? "Results";
   } else if (activeFilters.size > 1) {
-    heading = "Wybrane";
+    heading = "Selected";
   }
 
   return (
@@ -57,12 +57,12 @@ export function EventResultsPanel({
         <p className="text-[16px] font-bold text-[#14181f]">
           {heading}{" "}
           <span className="text-[#9aa0a8] font-medium">
-            · {filtered.length} {filtered.length === 1 ? "wynik" : "wyniki"}
+            · {filtered.length} {filtered.length === 1 ? "result" : "results"}
           </span>
         </p>
         {filtered.length > 0 && (
           <p className="text-[12px] text-[#9aa0a8] font-medium">
-            klik wynik → skok w wideo
+            click a result → seek in video
           </p>
         )}
       </div>
@@ -71,8 +71,8 @@ export function EventResultsPanel({
         {filtered.length === 0 ? (
           <p className="text-[#9aa0a8] text-sm text-center py-6 px-4">
             {activeFilters.size > 0
-              ? "Brak zdarzeń tego typu — wkrótce auto-detekcja."
-              : "Brak wyników — uruchom analizę filmu."}
+              ? "No events of this type — auto-detection coming soon."
+              : "No results — run a video analysis."}
           </p>
         ) : (
           <div className="flex flex-col gap-2 p-2">
@@ -93,7 +93,7 @@ export function EventResultsPanel({
                     {formatTime(ev.timestamp_seconds)}
                   </span>
 
-                  {/* Tag typu */}
+                  {/* Type tag */}
                   <span
                     className="text-[11px] font-bold rounded-full px-2 py-0.5 shrink-0 uppercase tracking-wider"
                     style={{ background: t?.bg ?? "#eef0f3", color: t?.color ?? "#6b7280" }}
@@ -101,17 +101,17 @@ export function EventResultsPanel({
                     {t?.label ?? ev.type}
                   </span>
 
-                  {/* Zawodnik / asysta */}
+                  {/* Player / assist */}
                   <span className="text-sm text-[#14181f] shrink-0 max-w-[40%] truncate">
                     {player || "—"}
                   </span>
 
-                  {/* Opis */}
+                  {/* Description */}
                   <span className="text-[13px] text-[#9aa0a8] flex-1 truncate">
                     {desc ?? ""}
                   </span>
 
-                  {/* Pewność */}
+                  {/* Confidence */}
                   {conf !== null && (
                     <div className="flex items-center gap-1.5 shrink-0">
                       <div className="w-10 h-1.5 bg-[#eceef1] rounded-full overflow-hidden">

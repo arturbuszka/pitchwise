@@ -1,13 +1,13 @@
 namespace PitchWise.Api.Config;
 
-// Odpowiednik worker/app/config.py. Wczytywane z ENV (te same nazwy co dziś) oraz
-// appsettings.json. Domyślne wartości zgodne z Pythonem.
+// Mirror of worker/app/config.py. Loaded from ENV (same names as before) and
+// appsettings.json. Defaults match the Python side.
 public class AppSettings
 {
     public string StorageDir { get; set; } = "./storage";
 
-    // .NET łączy się do Postgresa standardowym connection stringiem Npgsql.
-    // (Worker pythonowy używa postgresql+asyncpg://... do tej samej bazy.)
+    // .NET connects to Postgres with a standard Npgsql connection string.
+    // (The Python worker uses postgresql+asyncpg://... against the same database.)
     public string DatabaseConnection { get; set; } =
         "Host=localhost;Port=5432;Database=pitchwise;Username=pitchwise;Password=pitchwise";
 
@@ -21,7 +21,7 @@ public class AppSettings
     public string WebOrigin { get; set; } = "http://localhost:3000";
     public string WebOriginAlt { get; set; } = "http://localhost:3001";
 
-    // Nazwa listy Redis, z której zdejmuje pythonowy worker (kontrakt z worker.py).
+    // Name of the Redis list the Python worker pops from (contract with worker.py).
     public string VisionQueue { get; set; } = "vision_jobs";
 
     public string UploadsDir => Path.Combine(StorageDir, "uploads");

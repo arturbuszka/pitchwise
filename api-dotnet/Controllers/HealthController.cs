@@ -3,8 +3,8 @@ using PitchWise.Api.Config;
 
 namespace PitchWise.Api.Controllers;
 
-// Odpowiednik /api/health z main.py. analysis_inline zawsze false — w architekturze
-// .NET+worker analiza zawsze idzie przez Redis (tryb inline był dev-only w Pythonie).
+// Mirror of /api/health from main.py. analysis_inline is always false — in the
+// .NET+worker architecture analysis always goes through Redis (inline mode was dev-only in Python).
 [ApiController]
 [Route("api/health")]
 public class HealthController : ControllerBase

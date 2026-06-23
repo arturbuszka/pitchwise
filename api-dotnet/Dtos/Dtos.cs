@@ -2,9 +2,9 @@ using PitchWise.Api.Models;
 
 namespace PitchWise.Api.Dtos;
 
-// DTO odwzorowane 1:1 z worker/app/schemas.py. Nazwy pól w JSON ustawione globalnie na
-// snake_case (JsonNamingPolicy w Program.cs), więc property w PascalCase mapują się
-// na video_count, timestamp_seconds itd. — tak jak oczekuje istniejący frontend.
+// DTOs mirrored 1:1 from worker/app/schemas.py. JSON field names are set globally to
+// snake_case (JsonNamingPolicy in Program.cs), so PascalCase properties map to
+// video_count, timestamp_seconds, etc. — exactly what the existing frontend expects.
 
 public record AnalysisCreate(string Name, string? Subtitle = null, string Sport = "football");
 

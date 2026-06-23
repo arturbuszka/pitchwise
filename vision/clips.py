@@ -1,16 +1,15 @@
-"""Wycinanie klipów highlightów przez ffmpeg (CLI).
+"""Highlight clip extraction via ffmpeg (CLI).
 
-ffmpeg musi być w PATH. Używamy szybkiego kopiowania strumienia (-c copy), więc
-cięcie odbywa się na najbliższych klatkach kluczowych — wystarczająco dokładne do
-podglądu highlightów i bardzo szybkie. Dla cięcia co do klatki należałoby
-re-enkodować (wolniej) — do rozważenia później.
+ffmpeg must be on PATH. We use fast stream copy (-c copy), so cuts land on the nearest
+keyframes — accurate enough for highlight previews and very fast. Frame-accurate cuts
+would require re-encoding (slower) — to consider later.
 """
 import subprocess
 from pathlib import Path
 
 
 def probe_video(video_path: str) -> tuple[float | None, float | None]:
-    """Zwraca (duration_seconds, fps) przez ffprobe. None gdy się nie uda."""
+    """Returns (duration_seconds, fps) via ffprobe. None on failure."""
     try:
         out = subprocess.run(
             [
@@ -51,7 +50,7 @@ def extract_clip(
     start_seconds: float,
     end_seconds: float,
 ) -> bool:
-    """Wycina [start, end] do out_path. Zwraca True przy sukcesie."""
+    """Cuts [start, end] into out_path. Returns True on success."""
     start = max(0.0, start_seconds)
     duration = max(0.5, end_seconds - start)
     out_path.parent.mkdir(parents=True, exist_ok=True)

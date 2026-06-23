@@ -3,20 +3,20 @@
 import { EventType } from "@/lib/api";
 
 const ACTIONS: { icon: string; label: string; type: EventType }[] = [
-  { icon: "⚽", label: "Bramki", type: "goal" },
-  { icon: "🎯", label: "Strzały na bramkę", type: "shot" },
-  { icon: "↗", label: "Nieskuteczne podania", type: "wayward_pass" },
-  { icon: "🟨", label: "Faule i kartki", type: "foul" },
-  { icon: "⛳", label: "Rzuty wolne", type: "free_kick" },
-  { icon: "🚩", label: "Spalone", type: "offside" },
-  { icon: "🔄", label: "Zmiany", type: "substitution" },
-  { icon: "📐", label: "Stałe fragmenty", type: "set_piece" },
+  { icon: "⚽", label: "Goals", type: "goal" },
+  { icon: "🎯", label: "Shots on goal", type: "shot" },
+  { icon: "↗", label: "Wayward passes", type: "wayward_pass" },
+  { icon: "🟨", label: "Fouls and cards", type: "foul" },
+  { icon: "⛳", label: "Free kicks", type: "free_kick" },
+  { icon: "🚩", label: "Offsides", type: "offside" },
+  { icon: "🔄", label: "Substitutions", type: "substitution" },
+  { icon: "📐", label: "Set pieces", type: "set_piece" },
 ];
 
 /**
- * Pasek szybkich akcji = multi-select filtry panelu wyników.
- * Domyślnie nic nie zaznaczone => panel pokazuje wszystkie zdarzenia.
- * Toggle typu zawęża listę (suma zaznaczonych typów, OR).
+ * Quick-actions bar = multi-select filters for the results panel.
+ * Nothing selected by default => the panel shows all events.
+ * Toggling a type narrows the list (union of selected types, OR).
  */
 export function QuickActions({
   active,

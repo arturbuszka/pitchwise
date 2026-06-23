@@ -1,0 +1,184 @@
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
+using PitchWise.Api.Models;
+
+namespace PitchWise.Api.Data;
+
+// 1:1 mapping onto the schema from worker/app/models.py. Tables/columns and enum values
+// must match what the Python worker reads/writes on the same Postgres.
+public class AppDbContext : DbContext
+{
+    public AppDbContext(DbContextOptions<AppDbContext> options) : base(options) { }
+
+    public DbSet<AnalysisSession> AnalysisSessions => Set<AnalysisSession>();
+    public DbSet<Video> Videos => Set<Video>();
+    public DbSet<VisionJob> VisionJobs => Set<VisionJob>();
+    public DbSet<Event> Events => Set<Event>();
+    public DbSet<Clip> Clips => Set<Clip>();
+
+    protected override void OnModelCreating(ModelBuilder b)
+    {
+        // enum→string converters with values exactly as in Python (snake_case).
+        // The logic lives in static EnumMap methods — EF expression trees don't accept switch.
+        var sessionStatus = new ValueConverter<SessionStatus, string>(
+            v => EnumMap.SessionToDb(v), v => EnumMap.SessionFromDb(v));
+
+        var jobStatus = new ValueConverter<VisionJobStatus, string>(
+            v => EnumMap.JobToDb(v), v => EnumMap.JobFromDb(v));
+
+        var eventType = new ValueConverter<EventType, string>(
+            v => EventTypeMap.ToDb(v), v => EventTypeMap.FromDb(v));
+
+        var eventSource = new ValueConverter<EventSource, string>(
+            v => EnumMap.SourceToDb(v), v => EnumMap.SourceFromDb(v));
+
+        b.Entity<AnalysisSession>(e =>
+        {
+            e.ToTable("analysissession");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.Name).HasColumnName("name");
+            e.Property(x => x.Subtitle).HasColumnName("subtitle");
+            e.Property(x => x.Sport).HasColumnName("sport");
+            e.Property(x => x.Status).HasColumnName("status").HasConversion(sessionStatus);
+            e.Property(x => x.CreatedAt).HasColumnName("created_at");
+            e.Property(x => x.UpdatedAt).HasColumnName("updated_at");
+        });
+
+        b.Entity<Video>(e =>
+        {
+            e.ToTable("video");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.AnalysisId).HasColumnName("analysis_id");
+            e.Property(x => x.Name).HasColumnName("name");
+            e.Property(x => x.Filename).HasColumnName("filename");
+            e.Property(x => x.DurationSeconds).HasColumnName("duration_seconds");
+            e.Property(x => x.Fps).HasColumnName("fps");
+            e.Property(x => x.Order).HasColumnName("order");
+            e.Property(x => x.CreatedAt).HasColumnName("created_at");
+            e.HasIndex(x => x.AnalysisId);
+        });
+
+        b.Entity<VisionJob>(e =>
+        {
+            e.ToTable("visionjob");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.VideoId).HasColumnName("video_id");
+            e.Property(x => x.Status).HasColumnName("status").HasConversion(jobStatus);
+            e.Property(x => x.Progress).HasColumnName("progress");
+            e.Property(x => x.Error).HasColumnName("error");
+            e.Property(x => x.CreatedAt).HasColumnName("created_at");
+            e.Property(x => x.FinishedAt).HasColumnName("finished_at");
+            e.HasIndex(x => x.VideoId);
+        });
+
+        b.Entity<Event>(e =>
+        {
+            e.ToTable("event");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.AnalysisId).HasColumnName("analysis_id");
+            e.Property(x => x.VideoId).HasColumnName("video_id");
+            e.Property(x => x.Type).HasColumnName("type").HasConversion(eventType);
+            e.Property(x => x.Source).HasColumnName("source").HasConversion(eventSource);
+            e.Property(x => x.TimestampSeconds).HasColumnName("timestamp_seconds");
+            e.Property(x => x.Confidence).HasColumnName("confidence");
+            e.Property(x => x.Label).HasColumnName("label");
+            e.Property(x => x.Note).HasColumnName("note");
+            e.Property(x => x.PlayerNumber).HasColumnName("player_number");
+            e.Property(x => x.PlayerName).HasColumnName("player_name");
+            e.Property(x => x.AssistNumber).HasColumnName("assist_number");
+            e.Property(x => x.AssistName).HasColumnName("assist_name");
+            e.Property(x => x.CreatedAt).HasColumnName("created_at");
+            e.HasIndex(x => x.AnalysisId);
+            e.HasIndex(x => x.VideoId);
+        });
+
+        b.Entity<Clip>(e =>
+        {
+            e.ToTable("clip");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.EventId).HasColumnName("event_id");
+            e.Property(x => x.VideoId).HasColumnName("video_id");
+            e.Property(x => x.Filename).HasColumnName("filename");
+            e.Property(x => x.StartSeconds).HasColumnName("start_seconds");
+            e.Property(x => x.EndSeconds).HasColumnName("end_seconds");
+            e.Property(x => x.CreatedAt).HasColumnName("created_at");
+            e.HasIndex(x => x.EventId);
+            e.HasIndex(x => x.VideoId);
+        });
+    }
+}
+
+// enum ↔ string mappings (static methods — usable in EF expression trees).
+public static class EnumMap
+{
+    public static string SessionToDb(SessionStatus v) => v switch
+    {
+        SessionStatus.Processing => "processing",
+        SessionStatus.Done => "done",
+        _ => "draft",
+    };
+
+    public static SessionStatus SessionFromDb(string v) => v switch
+    {
+        "processing" => SessionStatus.Processing,
+        "done" => SessionStatus.Done,
+        _ => SessionStatus.Draft,
+    };
+
+    public static string JobToDb(VisionJobStatus v) => v switch
+    {
+        VisionJobStatus.Running => "running",
+        VisionJobStatus.Done => "done",
+        VisionJobStatus.Failed => "failed",
+        _ => "pending",
+    };
+
+    public static VisionJobStatus JobFromDb(string v) => v switch
+    {
+        "running" => VisionJobStatus.Running,
+        "done" => VisionJobStatus.Done,
+        "failed" => VisionJobStatus.Failed,
+        _ => VisionJobStatus.Pending,
+    };
+
+    public static string SourceToDb(EventSource v) => v == EventSource.Auto ? "auto" : "manual";
+
+    public static EventSource SourceFromDb(string v) => v == "auto" ? EventSource.Auto : EventSource.Manual;
+}
+
+// EventType ↔ string mapping shared by the EF converter and DTO serialization.
+public static class EventTypeMap
+{
+    public static string ToDb(EventType v) => v switch
+    {
+        EventType.Goal => "goal",
+        EventType.Shot => "shot",
+        EventType.WaywardPass => "wayward_pass",
+        EventType.Foul => "foul",
+        EventType.FreeKick => "free_kick",
+        EventType.Offside => "offside",
+        EventType.Substitution => "substitution",
+        EventType.SetPiece => "set_piece",
+        EventType.Manual => "manual",
+        _ => "manual",
+    };
+
+    public static EventType FromDb(string v) => v switch
+    {
+        "goal" => EventType.Goal,
+        "shot" => EventType.Shot,
+        "wayward_pass" => EventType.WaywardPass,
+        "foul" => EventType.Foul,
+        "free_kick" => EventType.FreeKick,
+        "offside" => EventType.Offside,
+        "substitution" => EventType.Substitution,
+        "set_piece" => EventType.SetPiece,
+        "manual" => EventType.Manual,
+        _ => EventType.Manual,
+    };
+}

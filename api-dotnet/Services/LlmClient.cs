@@ -5,8 +5,8 @@ using PitchWise.Api.Config;
 
 namespace PitchWise.Api.Services;
 
-// Odpowiednik worker/app/llm.py. Protokół zgodny z OpenAI Chat Completions ze
-// streamingiem SSE; przełączenie dostawcy = base_url + api_key + model w konfiguracji.
+// Mirror of worker/app/llm.py. Protocol compatible with OpenAI Chat Completions with
+// SSE streaming; switching provider = base_url + api_key + model in the config.
 public class LlmClient
 {
     private readonly HttpClient _http;
@@ -18,7 +18,7 @@ public class LlmClient
         _settings = settings;
     }
 
-    // Strumieniuje kolejne fragmenty tekstu (delty content) z modelu.
+    // Streams successive text fragments (content deltas) from the model.
     public async IAsyncEnumerable<string> StreamChatAsync(
         IEnumerable<(string Role, string Content)> messages,
         string? system,

@@ -18,9 +18,9 @@ import { QuickActions } from "./QuickActions";
 import { EventResultsPanel } from "./EventResultsPanel";
 
 const SPORT_LABELS: Record<string, string> = {
-  football: "⚽ Piłka nożna",
-  basketball: "🏀 Koszykówka",
-  handball: "🤾 Ręczna",
+  football: "⚽ Football",
+  basketball: "🏀 Basketball",
+  handball: "🤾 Handball",
 };
 
 export function AnalysisDetailClient({
@@ -70,7 +70,7 @@ export function AnalysisDetailClient({
     if (fresh) setEvents(fresh);
   }
 
-  // Polling statusu aktywnego joba
+  // Poll the status of the active job
   useEffect(() => {
     if (!job || job.status === "done" || job.status === "failed") return;
     const interval = setInterval(async () => {
@@ -105,7 +105,7 @@ export function AnalysisDetailClient({
       setVideos((prev) => [...prev, v]);
       setActiveVideoId(v.id);
     } catch (e) {
-      setUploadError((e as Error).message || "Upload nieudany");
+      setUploadError((e as Error).message || "Upload failed");
     } finally {
       setBusy(false);
       setUploadPct(null);
@@ -124,10 +124,10 @@ export function AnalysisDetailClient({
   }
 
   const jobLabel: Record<string, string> = {
-    pending: "Oczekuje…",
-    running: "Analiza…",
-    done: "Gotowe",
-    failed: "Błąd analizy",
+    pending: "Queued…",
+    running: "Analyzing…",
+    done: "Done",
+    failed: "Analysis error",
   };
 
   return (
@@ -144,10 +144,10 @@ export function AnalysisDetailClient({
           </span>
         </div>
 
-        {/* ANALIZA */}
+        {/* ANALYSIS */}
         <div className="px-[10px] mb-2">
           <p className="text-[11px] font-bold uppercase tracking-[.06em] text-[#6b7280] px-1.5">
-            ANALIZA
+            ANALYSIS
           </p>
         </div>
         <div className="mx-3 bg-[#22272f] rounded-[9px] px-3 py-2.5 mb-5">
@@ -157,18 +157,18 @@ export function AnalysisDetailClient({
           </p>
         </div>
 
-        {/* FILMY */}
+        {/* VIDEOS */}
         <div className="px-[10px] flex-1 overflow-y-auto">
           <div className="flex items-center justify-between mb-2 px-1.5">
             <p className="text-[11px] font-bold uppercase tracking-[.06em] text-[#6b7280]">
-              FILMY
+              VIDEOS
             </p>
             <button
               onClick={() => fileInputRef.current?.click()}
               disabled={busy}
               className="bg-[#22272f] text-[#9aa0a8] rounded-[7px] text-[12px] px-2 py-0.5 font-semibold hover:text-white transition-colors disabled:opacity-50"
             >
-              + załącz
+              + attach
             </button>
             <input
               ref={fileInputRef}
@@ -186,7 +186,7 @@ export function AnalysisDetailClient({
           {uploadPct !== null && (
             <div className="px-1.5 mb-2">
               <div className="flex items-center justify-between text-[11px] text-[#8b919b] mb-1">
-                <span>Wysyłanie…</span>
+                <span>Uploading…</span>
                 <span className="tabular-nums">{uploadPct}%</span>
               </div>
               <div className="h-1.5 bg-[#22272f] rounded-full overflow-hidden">
@@ -202,7 +202,7 @@ export function AnalysisDetailClient({
           )}
 
           {videos.length === 0 ? (
-            <p className="text-[12px] text-[#6b7280] px-1.5">Brak filmów</p>
+            <p className="text-[12px] text-[#6b7280] px-1.5">No videos</p>
           ) : (
             videos.map((v) => {
               const isActive = v.id === activeVideoId;
@@ -237,7 +237,7 @@ export function AnalysisDetailClient({
             href="/"
             className="text-[13px] text-[#8b919b] hover:text-white transition-colors font-medium px-1"
           >
-            ↩ Wszystkie analizy
+            ↩ All analyses
           </Link>
         </div>
       </aside>
@@ -275,7 +275,7 @@ export function AnalysisDetailClient({
               disabled={busy || activeVideoId == null || job?.status === "running" || job?.status === "pending"}
               className="bg-[#2f5fe0] hover:bg-[#2451c7] disabled:opacity-50 text-white rounded-[8px] px-3 py-1.5 text-[12px] font-semibold transition-colors"
             >
-              Uruchom analizę
+              Run analysis
             </button>
           </div>
         </div>
@@ -294,7 +294,7 @@ export function AnalysisDetailClient({
                 />
               ) : (
                 <div className="w-full h-64 flex items-center justify-center text-[#9aa0a8] text-sm">
-                  Załącz film, aby rozpocząć
+                  Attach a video to get started
                 </div>
               )}
             </div>
@@ -303,7 +303,7 @@ export function AnalysisDetailClient({
           {/* Quick actions */}
           <div className="px-5 pb-4">
             <p className="text-[12px] font-bold uppercase tracking-[.05em] text-[#9aa0a8] mb-2">
-              SZYBKIE AKCJE
+              QUICK ACTIONS
             </p>
             <QuickActions active={activeFilters} onToggle={toggleFilter} />
           </div>

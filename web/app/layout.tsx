@@ -9,7 +9,7 @@ const archivo = Archivo({
 
 export const metadata: Metadata = {
   title: "PitchWise",
-  description: "Auto-highlights z nagrań meczów",
+  description: "Auto-highlights from match recordings",
 };
 
 export default function RootLayout({
@@ -18,7 +18,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="pl" className={`h-full ${archivo.className}`}>
+    <html lang="en" className={`h-full ${archivo.className}`}>
       <body className="min-h-full bg-[#eceef1] text-[#14181f] antialiased">
         {children}
       </body>

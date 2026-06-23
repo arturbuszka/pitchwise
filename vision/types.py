@@ -1,27 +1,27 @@
-"""Lekkie typy współdzielone przez moduły vision — bez zależności od ciężkich
-bibliotek CV, żeby dało się je importować wszędzie (także w API)."""
+"""Lightweight types shared across the vision modules — no dependency on heavy CV
+libraries, so they can be imported anywhere (including the API)."""
 from dataclasses import dataclass, field
 
 
-# Klasy obiektów, których oczekujemy od modelu piłkarskiego (Roboflow sports /
-# football-players-detection). Mapowanie indeksów klas modelu na te nazwy odbywa
-# się w detektorze.
+# Object classes we expect from a football-specific model (Roboflow sports /
+# football-players-detection). Mapping the model's class indices onto these names
+# happens in the detector.
 CLASS_BALL = "ball"
 CLASS_PLAYER = "player"
 CLASS_GOALKEEPER = "goalkeeper"
 CLASS_REFEREE = "referee"
-# Hak pod Etap 2: detekcja bramki (słupki/siatka). Nieaktywne dopóki model nie
-# zwraca tej klasy — wtedy events.py użyje przecięcia linii bramkowej jako mocnego
-# sygnału zamiast samej heurystyki ruchu piłki.
+# Stage 2 hook: goal detection (posts/net). Inactive until the model returns this
+# class — then events.py will use goal-line crossing as a strong signal instead of
+# the ball-motion heuristic alone.
 CLASS_GOAL = "goal"
 
 
 @dataclass
 class Detection:
-    cls: str                       # jedna z CLASS_*
+    cls: str                       # one of CLASS_*
     xyxy: tuple[float, float, float, float]
     confidence: float
-    track_id: int | None = None    # nadawany przez tracker
+    track_id: int | None = None    # assigned by the tracker
 
 
 @dataclass

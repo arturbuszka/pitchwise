@@ -8,7 +8,7 @@ interface Message {
   content: string;
 }
 
-// Renderuje treść asystenta, zamieniając znaczniki MM:SS na klikalne linki "skok w wideo".
+// Renders the assistant content, turning MM:SS markers into clickable "seek in video" links.
 function renderContent(
   content: string,
   onSeek?: (seconds: number) => void
@@ -100,7 +100,7 @@ export function Chat({
           const copy = [...m];
           copy[copy.length - 1] = {
             role: "assistant",
-            content: "Błąd połączenia z LLM.",
+            content: "LLM connection error.",
           };
           return copy;
         });
@@ -125,7 +125,7 @@ export function Chat({
         <span className="w-6 h-6 rounded-[6px] bg-[#2f5fe0] text-white flex items-center justify-center text-xs">
           ✦
         </span>
-        <span className="text-sm font-bold text-[#14181f]">Asystent</span>
+        <span className="text-sm font-bold text-[#14181f]">Assistant</span>
         <span className="ml-auto flex items-center gap-1.5 text-[11px] text-green-600 font-semibold">
           <span className="w-1.5 h-1.5 rounded-full bg-green-500 inline-block" />
           online
@@ -136,7 +136,7 @@ export function Chat({
       <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-3">
         {messages.length === 0 && (
           <p className="text-[#9aa0a8] text-sm text-center mt-8">
-            Zapytaj o mecz — eventy, statystyki, momenty…
+            Ask about the match — events, stats, key moments…
           </p>
         )}
         {messages.map((m, i) => (
@@ -169,7 +169,7 @@ export function Chat({
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && send()}
-          placeholder="Zapytaj o zawodnika, akcję…"
+          placeholder="Ask about a player, a play…"
           disabled={running}
           className="flex-1 bg-white border border-[#e4e7ec] rounded-xl px-3 py-2 text-[13px] text-[#14181f] placeholder-[#9aa0a8] focus:outline-none focus:border-[#2f5fe0] focus:ring-1 focus:ring-[#2f5fe0]/30 disabled:opacity-50"
         />

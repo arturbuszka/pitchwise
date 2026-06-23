@@ -1,8 +1,8 @@
 namespace PitchWise.Api.Models;
 
-// Encje EF Core odwzorowane 1:1 z worker/app/models.py (SQLModel).
-// Nazwy tabel/kolumn ustawiane w AppDbContext (snake_case) — wspólny schemat
-// z pythonowym workerem jest formalnym kontraktem między .NET a Pythonem.
+// EF Core entities mirrored 1:1 from worker/app/models.py (SQLModel).
+// Table/column names are set in AppDbContext (snake_case) — the shared schema
+// with the Python worker is the formal contract between .NET and Python.
 
 public class AnalysisSession
 {

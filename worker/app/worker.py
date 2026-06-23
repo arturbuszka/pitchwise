@@ -1,13 +1,13 @@
-"""Worker analizy wideo — zdejmuje joby z listy Redis (BRPOP) i woła vision pipeline.
+"""Video analysis worker — pops jobs off a Redis list (BRPOP) and calls the vision pipeline.
 
-Zastępuje arq (app/tasks.py). Kontrakt z producentem (.NET API):
-  - lista Redis: VISION_QUEUE (domyślnie "vision_jobs")
+Replaces arq (app/tasks.py). Contract with the producer (.NET API):
+  - Redis list: VISION_QUEUE (default "vision_jobs")
   - element: JSON {"job_id": <int>}
 
-Uruchomienie:  python -m app.worker
+Run with:  python -m app.worker
 
-Worker sam łączy się do Redis i sam zdejmuje zadania — API (.NET lub Python) tylko
-wrzuca job_id przez LPUSH. Cała logika ML pozostaje w vision_runner.run_vision_job.
+The worker connects to Redis and pops jobs itself — the API (.NET or Python) only
+pushes job_id via LPUSH. All ML logic stays in vision_runner.run_vision_job.
 """
 import asyncio
 import json
@@ -32,19 +32,19 @@ async def _handle(raw: str) -> None:
         payload = json.loads(raw)
         job_id = int(payload["job_id"])
     except (json.JSONDecodeError, KeyError, TypeError, ValueError):
-        log.warning("Pominięto nieprawidłowy element kolejki: %r", raw)
+        log.warning("Skipped invalid queue item: %r", raw)
         return
-    log.info("Start joba %s", job_id)
+    log.info("Starting job %s", job_id)
     try:
         await run_vision_job(job_id)
-        log.info("Job %s zakończony", job_id)
-    except Exception:  # noqa: BLE001 — pojedynczy job nie może wywrócić workera
-        log.exception("Job %s zakończony błędem", job_id)
+        log.info("Job %s finished", job_id)
+    except Exception:  # noqa: BLE001 — a single job must not bring the worker down
+        log.exception("Job %s failed", job_id)
 
 
-# BRPOP blokuje po stronie serwera Redis przez BRPOP_TIMEOUT sekund. Socket read
-# timeout klienta musi być DŁUŻSZY, inaczej redis-py rzuca TimeoutError zamiast
-# zwrócić None. Dajemy zapas (+5 s) i tak czy siak łapiemy TimeoutError jako "brak joba".
+# BRPOP blocks on the Redis server side for BRPOP_TIMEOUT seconds. The client's socket
+# read timeout must be LONGER, otherwise redis-py raises TimeoutError instead of
+# returning None. We add a margin (+5s) and catch TimeoutError as "no job" anyway.
 BRPOP_TIMEOUT = 5
 
 
@@ -54,14 +54,14 @@ async def main() -> None:
         decode_responses=True,
         socket_timeout=BRPOP_TIMEOUT + 5,
     )
-    log.info("Worker nasłuchuje na liście Redis %r (%s)", QUEUE, settings.redis_url)
+    log.info("Worker listening on Redis list %r (%s)", QUEUE, settings.redis_url)
     try:
         while True:
             try:
-                # BRPOP blokuje do pojawienia się elementu; zwraca (klucz, wartość).
+                # BRPOP blocks until an item appears; returns (key, value).
                 item = await client.brpop(QUEUE, timeout=BRPOP_TIMEOUT)
             except RedisTimeoutError:
-                # Pusta kolejka przez cały timeout — to normalne, czekamy dalej.
+                # Empty queue for the whole timeout — normal, keep waiting.
                 continue
             if item is None:
                 continue

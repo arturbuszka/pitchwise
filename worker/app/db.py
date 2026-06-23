@@ -1,4 +1,4 @@
-"""Async silnik DB + sesje (SQLModel/SQLAlchemy)."""
+"""Async DB engine + sessions (SQLModel/SQLAlchemy)."""
 from collections.abc import AsyncGenerator
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -12,8 +12,8 @@ async_session_maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_
 
 
 async def init_db() -> None:
-    # Schemat tworzy .NET API (EF Core EnsureCreated) — jedno źródło prawdy dla
-    # współdzielonego Postgresa. Worker/Python tylko czyta i pisze, nie tworzy tabel.
+    # The .NET API owns the schema (EF Core EnsureCreated) — a single source of truth
+    # for the shared Postgres. The Python worker only reads and writes, never creates tables.
     import app.models  # noqa: F401
 
 

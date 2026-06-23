@@ -9,8 +9,8 @@ venv/
 *.sqlite3
 
 # data / media
-data/
-storage/
+/data/
+/storage/
 *.mp4
 *.mov
 *.mkv
@@ -26,6 +26,10 @@ out/
 .env.local
 .env*.local
 npm-debug.log*
+
+# .NET
+api-dotnet/bin/
+api-dotnet/obj/
 
 # IDE / OS
 .vscode/

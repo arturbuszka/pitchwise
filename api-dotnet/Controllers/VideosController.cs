@@ -9,7 +9,7 @@ using PitchWise.Api.Services;
 
 namespace PitchWise.Api.Controllers;
 
-// Odpowiednik worker/app/routers/videos.py: upload, streaming (Range), analyze→enqueue, status.
+// Mirror of worker/app/routers/videos.py: upload, streaming (Range), analyze→enqueue, status.
 [ApiController]
 [Route("api/analyses")]
 public class VideosController : ControllerBase
@@ -34,7 +34,7 @@ public class VideosController : ControllerBase
     public async Task<ActionResult<List<VideoOut>>> ListVideos(int analysisId)
     {
         if (!await _db.AnalysisSessions.AnyAsync(a => a.Id == analysisId))
-            return NotFound(new { detail = "Analiza nie znaleziona" });
+            return NotFound(new { detail = "Analysis not found" });
 
         var rows = await _db.Videos
             .Where(v => v.AnalysisId == analysisId)
@@ -47,11 +47,11 @@ public class VideosController : ControllerBase
     public async Task<ActionResult<VideoOut>> UploadVideo(int analysisId, [FromForm] string name, IFormFile file)
     {
         var session = await _db.AnalysisSessions.FindAsync(analysisId);
-        if (session is null) return NotFound(new { detail = "Analiza nie znaleziona" });
+        if (session is null) return NotFound(new { detail = "Analysis not found" });
 
         var ext = Path.GetExtension(file.FileName ?? "").ToLowerInvariant();
         if (!AllowedExt.Contains(ext))
-            return BadRequest(new { detail = $"Nieobsługiwany format: {ext}. Dozwolone: {string.Join(", ", AllowedExt.OrderBy(x => x))}" });
+            return BadRequest(new { detail = $"Unsupported format: {ext}. Allowed: {string.Join(", ", AllowedExt.OrderBy(x => x))}" });
 
         var storedName = $"{Guid.NewGuid():N}{ext}";
         var dest = Path.Combine(_settings.UploadsDir, storedName);
@@ -78,24 +78,24 @@ public class VideosController : ControllerBase
     public async Task<IActionResult> StreamVideo(int analysisId, int videoId)
     {
         var video = await GetVideoOr404(analysisId, videoId);
-        if (video is null) return NotFound(new { detail = "Wideo nie znalezione" });
+        if (video is null) return NotFound(new { detail = "Video not found" });
 
         var path = Path.Combine(_settings.UploadsDir, video.Filename);
-        if (!System.IO.File.Exists(path)) return NotFound(new { detail = "Plik wideo nie istnieje" });
+        if (!System.IO.File.Exists(path)) return NotFound(new { detail = "Video file does not exist" });
 
-        // enableRangeProcessing => przewijanie wideo w przeglądarce (HTTP Range).
+        // enableRangeProcessing => video seeking in the browser (HTTP Range).
         return PhysicalFile(Path.GetFullPath(path), ContentTypeFor(path), enableRangeProcessing: true);
     }
 
-    // ---- Pipeline YOLO ----
+    // ---- YOLO pipeline ----
 
     [HttpPost("{analysisId:int}/videos/{videoId:int}/analyze")]
     public async Task<ActionResult<VisionJobOut>> StartAnalysis(int analysisId, int videoId)
     {
         var video = await GetVideoOr404(analysisId, videoId);
-        if (video is null) return NotFound(new { detail = "Wideo nie znalezione" });
+        if (video is null) return NotFound(new { detail = "Video not found" });
 
-        // nie startuj drugiego joba, jeśli jeden jest aktywny
+        // do not start a second job if one is already active
         var existing = await _db.VisionJobs
             .Where(j => j.VideoId == videoId &&
                         (j.Status == VisionJobStatus.Pending || j.Status == VisionJobStatus.Running))
@@ -123,7 +123,7 @@ public class VideosController : ControllerBase
     public async Task<ActionResult<VisionJobOut?>> GetStatus(int analysisId, int videoId)
     {
         var video = await GetVideoOr404(analysisId, videoId);
-        if (video is null) return NotFound(new { detail = "Wideo nie znalezione" });
+        if (video is null) return NotFound(new { detail = "Video not found" });
 
         var job = await _db.VisionJobs
             .Where(j => j.VideoId == videoId)
@@ -133,20 +133,20 @@ public class VideosController : ControllerBase
         return JobToOut(job);
     }
 
-    // ---- Klipy ----
+    // ---- Clips ----
 
     [HttpGet("{analysisId:int}/clips/{clipId:int}/stream")]
     public async Task<IActionResult> StreamClip(int analysisId, int clipId)
     {
         var clip = await _db.Clips.FindAsync(clipId);
-        if (clip is null) return NotFound(new { detail = "Klip nie znaleziony" });
+        if (clip is null) return NotFound(new { detail = "Clip not found" });
 
         var video = await _db.Videos.FindAsync(clip.VideoId);
         if (video is null || video.AnalysisId != analysisId)
-            return NotFound(new { detail = "Klip nie znaleziony" });
+            return NotFound(new { detail = "Clip not found" });
 
         var path = Path.Combine(_settings.ClipsDir, clip.Filename);
-        if (!System.IO.File.Exists(path)) return NotFound(new { detail = "Plik klipu nie istnieje" });
+        if (!System.IO.File.Exists(path)) return NotFound(new { detail = "Clip file does not exist" });
 
         return PhysicalFile(Path.GetFullPath(path), ContentTypeFor(path), enableRangeProcessing: true);
     }

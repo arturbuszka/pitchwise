@@ -7,10 +7,10 @@ using StackExchange.Redis;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// --- Konfiguracja: appsettings.json + ENV (te same nazwy co dziś, by nie ruszać deploy) ---
+// --- Configuration: appsettings.json + ENV (same names as before, to keep deploys unchanged) ---
 var settings = new AppSettings();
 builder.Configuration.GetSection("App").Bind(settings);
-// Nadpisania z ENV (1:1 z worker/app/config.py).
+// ENV overrides (1:1 with worker/app/config.py).
 settings.StorageDir = Environment.GetEnvironmentVariable("STORAGE_DIR") ?? settings.StorageDir;
 settings.DatabaseConnection = Environment.GetEnvironmentVariable("DATABASE_CONNECTION") ?? settings.DatabaseConnection;
 settings.RedisUrl = Environment.GetEnvironmentVariable("REDIS_URL") ?? settings.RedisUrl;
@@ -35,7 +35,7 @@ builder.Services.AddSingleton<VisionQueue>();
 // --- LLM ---
 builder.Services.AddHttpClient<LlmClient>(c => c.Timeout = TimeSpan.FromSeconds(120));
 
-// --- Upload dużych plików wideo (FastAPI nie miał limitu; zdejmujemy go też tutaj) ---
+// --- Large video file uploads (FastAPI had no limit; we lift it here too) ---
 builder.Services.Configure<Microsoft.AspNetCore.Http.Features.FormOptions>(o =>
 {
     o.MultipartBodyLengthLimit = long.MaxValue;
@@ -43,7 +43,7 @@ builder.Services.Configure<Microsoft.AspNetCore.Http.Features.FormOptions>(o =>
 });
 builder.WebHost.ConfigureKestrel(o => o.Limits.MaxRequestBodySize = null);
 
-// --- JSON: snake_case + enumy o wartościach jak w Pythonie ---
+// --- JSON: snake_case + enums with the same values as in Python ---
 builder.Services.AddControllers().AddJsonOptions(o =>
 {
     o.JsonSerializerOptions.PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.SnakeCaseLower;
@@ -53,7 +53,7 @@ builder.Services.AddControllers().AddJsonOptions(o =>
     o.JsonSerializerOptions.Converters.Add(new VisionJobStatusJsonConverter());
 });
 
-// --- CORS (1:1 z main.py) ---
+// --- CORS (1:1 with main.py) ---
 builder.Services.AddCors(o => o.AddDefaultPolicy(p => p
     .WithOrigins(settings.WebOrigin, settings.WebOriginAlt)
     .AllowCredentials()
@@ -62,7 +62,7 @@ builder.Services.AddCors(o => o.AddDefaultPolicy(p => p
 
 var app = builder.Build();
 
-// Schemat tworzy .NET (źródło prawdy); worker pythonowy tylko czyta/pisze.
+// .NET owns the schema (source of truth); the Python worker only reads/writes.
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
@@ -76,7 +76,7 @@ app.Run();
 
 static ConfigurationOptions RedisConfig(string url)
 {
-    // Akceptuj zarówno "host:port" jak i "redis://host:port".
+    // Accept both "host:port" and "redis://host:port".
     var trimmed = url.Replace("redis://", "").Replace("rediss://", "");
     return ConfigurationOptions.Parse(trimmed);
 }

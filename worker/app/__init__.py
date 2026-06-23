@@ -1,8 +1,8 @@
-"""Pakiet workera vision.
+"""Vision worker package.
 
-Monorepo: moduł `vision/` leży w katalogu nadrzędnym względem `worker/`. Dodajemy
-korzeń repo do sys.path, by `import vision...` działał niezależnie od cwd, z
-którego uruchomiono workera.
+Monorepo: the `vision/` module lives one directory above `worker/`. We add the repo
+root to sys.path so that `import vision...` works regardless of the cwd the worker
+was started from.
 """
 import sys
 from pathlib import Path

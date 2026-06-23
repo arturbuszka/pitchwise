@@ -2,19 +2,19 @@ using PitchWise.Api.Dtos;
 
 namespace PitchWise.Api.Config;
 
-// Odpowiednik EVENT_TYPE_CONFIG z worker/app/models.py. Kolejność zachowana 1:1.
+// Mirror of EVENT_TYPE_CONFIG in worker/app/models.py. Order kept 1:1.
 public static class EventTypeConfig
 {
     public static readonly IReadOnlyList<EventTypeConfigOut> All = new List<EventTypeConfigOut>
     {
-        new("goal",         "Bramka",         "⚽", "#16a34a", "#e6f5ec"),
-        new("shot",         "Strzał",         "🎯", "#2f5fe0", "#e8edff"),
-        new("wayward_pass", "Strata",         "↗",  "#e0732f", "#fff0e6"),
-        new("foul",         "Faul",           "🟨", "#ef4444", "#fee2e2"),
-        new("free_kick",    "Rzut wolny",     "⛳", "#2f5fe0", "#e8edff"),
-        new("offside",      "Spalony",        "🚩", "#8b5cf6", "#f3e8ff"),
-        new("substitution", "Zmiana",         "🔄", "#06b6d4", "#e0f7fa"),
-        new("set_piece",    "Stały fragment", "📐", "#64748b", "#f1f5f9"),
-        new("manual",       "Ręczny",         "✏️",  "#6b7280", "#f9fafb"),
+        new("goal",         "Goal",          "⚽", "#16a34a", "#e6f5ec"),
+        new("shot",         "Shot",          "🎯", "#2f5fe0", "#e8edff"),
+        new("wayward_pass", "Turnover",      "↗",  "#e0732f", "#fff0e6"),
+        new("foul",         "Foul",          "🟨", "#ef4444", "#fee2e2"),
+        new("free_kick",    "Free kick",     "⛳", "#2f5fe0", "#e8edff"),
+        new("offside",      "Offside",       "🚩", "#8b5cf6", "#f3e8ff"),
+        new("substitution", "Substitution",  "🔄", "#06b6d4", "#e0f7fa"),
+        new("set_piece",    "Set piece",     "📐", "#64748b", "#f1f5f9"),
+        new("manual",       "Manual",        "✏️",  "#6b7280", "#f9fafb"),
     };
 }

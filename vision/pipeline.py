@@ -1,7 +1,7 @@
-"""Orkiestracja vision: detekcja → tracking → eventy → (klipy robi API).
+"""Vision orchestration: detection → tracking → events → (clips are handled by the API).
 
-To serce systemu. Zwraca strukturę, którą API zapisuje do DB i z której tnie klipy.
-Zaprojektowane jako czysta funkcja domenowa — bez zależności od DB/HTTP.
+The core of the system. Returns a structure the API persists to the DB and uses to cut
+clips. Designed as a pure domain function — no DB/HTTP dependencies.
 """
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -28,9 +28,9 @@ def analyze_video(
     event_config: EventConfig | None = None,
     on_progress: Callable[[float], None] | None = None,
 ) -> PipelineResult:
-    """Pełna analiza nagrania → wykryte eventy.
+    """Full recording analysis → detected events.
 
-    on_progress: callback(0..1) do raportowania postępu (UI/kolejka).
+    on_progress: callback(0..1) for progress reporting (UI/queue).
     """
     duration, fps = probe_video(video_path)
 

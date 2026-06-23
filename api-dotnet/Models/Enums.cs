@@ -1,8 +1,8 @@
 namespace PitchWise.Api.Models;
 
-// Enumy odwzorowane 1:1 z worker/app/models.py (str, Enum). W DB zapisywane jako
-// string (wartości dokładnie jak w Pythonie), bo na tym schemacie operuje też
-// pythonowy worker.
+// Enums mirrored 1:1 from worker/app/models.py (str, Enum). Stored in the DB as
+// strings (values exactly as in Python), because the Python worker operates on the
+// same schema.
 
 public enum SessionStatus
 {

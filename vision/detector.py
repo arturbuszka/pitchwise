@@ -1,12 +1,12 @@
-"""Detekcja + tracking obiektów na klatkach wideo.
+"""Object detection + tracking on video frames.
 
-Stack: ultralytics (YOLO11) do detekcji + supervision (ByteTrack) do trackingu.
-Roboflow `sports` / Roboflow Universe `football-players-detection` dostarczają
-wytrenowanego modelu (gracze/piłka/sędzia). Bez ścieżki do modelu używamy
-domyślnego `yolo11n.pt` — wykrywa on klasę COCO "sports ball" i "person", co
-wystarcza do wstępnego pipeline'u, ale do produkcji potrzebny model piłkarski.
+Stack: ultralytics (YOLO11) for detection + supervision (ByteTrack) for tracking.
+Roboflow `sports` / Roboflow Universe `football-players-detection` provide a trained
+model (players/ball/referee). Without a model path we use the default `yolo11n.pt` —
+it detects the COCO "sports ball" and "person" classes, which is enough for an
+initial pipeline, but production needs a football-specific model.
 
-Ciężkie importy (torch/ultralytics) są leniwe, żeby reszta API startowała bez nich.
+Heavy imports (torch/ultralytics) are lazy so the rest of the API can start without them.
 """
 from collections.abc import Iterator
 
@@ -19,8 +19,8 @@ from vision.types import (
     FrameResult,
 )
 
-# Mapowanie nazw klas modelu na nasze kategorie. Pokrywa zarówno modele piłkarskie
-# (player/ball/referee/goalkeeper) jak i domyślny COCO (person/sports ball).
+# Maps model class names onto our categories. Covers both football-specific models
+# (player/ball/referee/goalkeeper) and the default COCO (person/sports ball).
 _CLASS_ALIASES = {
     "ball": CLASS_BALL,
     "sports ball": CLASS_BALL,
@@ -28,7 +28,7 @@ _CLASS_ALIASES = {
     "person": CLASS_PLAYER,
     "referee": CLASS_REFEREE,
     "goalkeeper": "goalkeeper",
-    # Hak pod Etap 2: aktywne tylko gdy model piłkarski zwraca klasę bramki.
+    # Stage 2 hook: active only when a football-specific model returns a goal class.
     "goal": CLASS_GOAL,
     "goalpost": CLASS_GOAL,
 }
@@ -44,7 +44,7 @@ class Detector:
     def _ensure_loaded(self) -> None:
         if self._model is not None:
             return
-        from ultralytics import YOLO  # leniwy import (ciężki)
+        from ultralytics import YOLO  # lazy import (heavy)
         import supervision as sv
 
         self._model = YOLO(self.model_path)
@@ -55,7 +55,7 @@ class Detector:
         return _CLASS_ALIASES.get(raw_name.lower())
 
     def run(self, video_path: str) -> Iterator[FrameResult]:
-        """Iteruje po klatkach (co `frame_stride`) i zwraca detekcje z track_id."""
+        """Iterates over frames (every `frame_stride`) and yields detections with track_id."""
         self._ensure_loaded()
         sv = self._sv
 

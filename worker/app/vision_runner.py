@@ -1,4 +1,4 @@
-"""Runner pipeline vision dla nowego modelu VisionJob/Video/AnalysisSession."""
+"""Vision pipeline runner for the VisionJob/Video/AnalysisSession model."""
 import asyncio
 from datetime import datetime, timezone
 
@@ -15,7 +15,7 @@ settings = get_settings()
 
 
 async def _save_progress(job_id: int, progress: float) -> None:
-    """Zapis postępu w osobnej, krótkiej sesji DB (woła się z wątku roboczego)."""
+    """Saves progress in a separate, short-lived DB session (called from the worker thread)."""
     async with async_session_maker() as session:
         job = await session.get(VisionJob, job_id)
         if job and job.status == VisionJobStatus.running:
@@ -24,7 +24,7 @@ async def _save_progress(job_id: int, progress: float) -> None:
 
 
 async def run_vision_job(job_id: int) -> None:
-    """Wykonuje analizę wideo w tle. Aktualizuje VisionJob, Event, Clip, Video w DB."""
+    """Runs the video analysis in the background. Updates VisionJob, Event, Clip, Video in the DB."""
     from vision.pipeline import analyze_video
 
     async with async_session_maker() as session:
@@ -46,14 +46,14 @@ async def run_vision_job(job_id: int) -> None:
         video_path = str(settings.uploads_dir / video.filename)
 
         try:
-            # analyze_video jest synchroniczne i CPU-bound (OpenCV + YOLO) — uruchamiamy je
-            # w osobnym wątku, żeby nie blokować event loopu (inaczej /status nie odpowiada).
+            # analyze_video is synchronous and CPU-bound (OpenCV + YOLO) — we run it in a
+            # separate thread so it doesn't block the event loop (otherwise /status hangs).
             loop = asyncio.get_running_loop()
-            last_saved = 0.0  # ostatni zapisany postęp (throttling)
+            last_saved = 0.0  # last saved progress (throttling)
 
             def on_progress(p: float) -> None:
                 nonlocal last_saved
-                # zapisuj tylko przy zmianie >= 2%, żeby nie zalać DB
+                # save only on a change >= 2% so we don't flood the DB
                 if p - last_saved < 0.02 and p < 1.0:
                     return
                 last_saved = p
@@ -67,11 +67,11 @@ async def run_vision_job(job_id: int) -> None:
                 on_progress=on_progress,
             )
 
-            # zapisz metadane wideo
+            # save video metadata
             video.duration_seconds = result.duration_seconds
             video.fps = result.fps
 
-            # zapisz zdarzenia (klipy per event — patrz niżej, wyłączone na tym etapie)
+            # save events (per-event clips — see below, disabled for now)
             for det in result.events:
                 event = Event(
                     analysis_id=video.analysis_id,
@@ -85,8 +85,8 @@ async def run_vision_job(job_id: int) -> None:
                 session.add(event)
                 await session.flush()
 
-                # Generowanie klipów per event — wyłączone na tym etapie.
-                # Włącz przez GENERATE_CLIPS=1; przyda się ponownie później.
+                # Per-event clip generation — disabled for now.
+                # Enable with GENERATE_CLIPS=1; will be useful again later.
                 if settings.generate_clips:
                     from vision.clips import extract_clip
 
@@ -109,7 +109,7 @@ async def run_vision_job(job_id: int) -> None:
             job.progress = 1.0
             job.finished_at = datetime.now(timezone.utc)
 
-            # zaktualizuj status sesji na "done" jeśli wszystkie joby skończone
+            # set the session status to "done" if all jobs are finished
             analysis_session = await session.get(AnalysisSession, video.analysis_id)
             if analysis_session:
                 all_jobs = (

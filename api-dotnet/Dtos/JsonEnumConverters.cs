@@ -5,8 +5,8 @@ using PitchWise.Api.Models;
 
 namespace PitchWise.Api.Dtos;
 
-// Konwertery JSON, by enumy w odpowiedziach/requestach miały dokładnie te same
-// wartości stringowe co dzisiejsze FastAPI (np. "wayward_pass", "free_kick").
+// JSON converters so enums in responses/requests carry exactly the same string
+// values as the original FastAPI (e.g. "wayward_pass", "free_kick").
 
 public class EventTypeJsonConverter : JsonConverter<EventType>
 {
