@@ -15,6 +15,7 @@ public class AppDbContext : DbContext
     public DbSet<VisionJob> VisionJobs => Set<VisionJob>();
     public DbSet<Event> Events => Set<Event>();
     public DbSet<Clip> Clips => Set<Clip>();
+    public DbSet<Highlight> Highlights => Set<Highlight>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -31,6 +32,9 @@ public class AppDbContext : DbContext
 
         var eventSource = new ValueConverter<EventSource, string>(
             v => EnumMap.SourceToDb(v), v => EnumMap.SourceFromDb(v));
+
+        var highlightStatus = new ValueConverter<HighlightStatus, string>(
+            v => EnumMap.HighlightToDb(v), v => EnumMap.HighlightFromDb(v));
 
         b.Entity<AnalysisSession>(e =>
         {
@@ -110,6 +114,26 @@ public class AppDbContext : DbContext
             e.HasIndex(x => x.EventId);
             e.HasIndex(x => x.VideoId);
         });
+
+        b.Entity<Highlight>(e =>
+        {
+            e.ToTable("highlight");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.AnalysisId).HasColumnName("analysis_id");
+            e.Property(x => x.Name).HasColumnName("name");
+            e.Property(x => x.EventIds).HasColumnName("event_ids");
+            e.Property(x => x.Status).HasColumnName("status").HasConversion(highlightStatus);
+            e.Property(x => x.Progress).HasColumnName("progress");
+            e.Property(x => x.Filename).HasColumnName("filename");
+            e.Property(x => x.Error).HasColumnName("error");
+            e.Property(x => x.ShareToken).HasColumnName("share_token");
+            e.Property(x => x.ShareExpiresAt).HasColumnName("share_expires_at");
+            e.Property(x => x.CreatedAt).HasColumnName("created_at");
+            e.Property(x => x.FinishedAt).HasColumnName("finished_at");
+            e.HasIndex(x => x.AnalysisId);
+            e.HasIndex(x => x.ShareToken);
+        });
     }
 }
 
@@ -149,6 +173,22 @@ public static class EnumMap
     public static string SourceToDb(EventSource v) => v == EventSource.Auto ? "auto" : "manual";
 
     public static EventSource SourceFromDb(string v) => v == "auto" ? EventSource.Auto : EventSource.Manual;
+
+    public static string HighlightToDb(HighlightStatus v) => v switch
+    {
+        HighlightStatus.Running => "running",
+        HighlightStatus.Done => "done",
+        HighlightStatus.Failed => "failed",
+        _ => "pending",
+    };
+
+    public static HighlightStatus HighlightFromDb(string v) => v switch
+    {
+        "running" => HighlightStatus.Running,
+        "done" => HighlightStatus.Done,
+        "failed" => HighlightStatus.Failed,
+        _ => HighlightStatus.Pending,
+    };
 }
 
 // EventType ↔ string mapping shared by the EF converter and DTO serialization.

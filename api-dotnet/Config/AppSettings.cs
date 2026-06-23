@@ -24,6 +24,12 @@ public class AppSettings
     // Name of the Redis list the Python worker pops from (contract with worker.py).
     public string VisionQueue { get; set; } = "vision_jobs";
 
+    // Name of the Redis list the highlight worker loop pops from.
+    public string HighlightQueue { get; set; } = "highlight_jobs";
+
+    // How long a generated share link stays valid.
+    public int ShareLinkTtlHours { get; set; } = 24;
+
     public string UploadsDir => Path.Combine(StorageDir, "uploads");
     public string ClipsDir => Path.Combine(StorageDir, "clips");
 

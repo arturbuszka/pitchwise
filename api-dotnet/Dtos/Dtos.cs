@@ -90,3 +90,25 @@ public record EventTypeConfigOut(
 public record ChatMessage(string Role, string Content);
 
 public record ChatRequest(List<ChatMessage> Messages, int? AnalysisId = null);
+
+// --- Highlights ---
+
+public record CreateHighlightIn(string Name, List<int> EventIds);
+
+public record HighlightOut(
+    int Id,
+    int AnalysisId,
+    string Name,
+    HighlightStatus Status,
+    double Progress,
+    string? Error,
+    string? ShareToken,
+    DateTime? ShareExpiresAt,
+    DateTime CreatedAt,
+    DateTime? FinishedAt);
+
+// Returned when creating/refreshing a share link.
+public record ShareOut(string Token, string Url, DateTime ExpiresAt);
+
+// Public metadata for the share page (no analysis id leaked).
+public record SharePublicOut(string Name, HighlightStatus Status, DateTime ExpiresAt);

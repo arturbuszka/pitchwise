@@ -18,6 +18,7 @@ import redis.asyncio as redis
 from redis.exceptions import TimeoutError as RedisTimeoutError
 
 from app.config import get_settings
+from app.highlight_runner import run_highlight_job
 from app.vision_runner import run_vision_job
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -25,6 +26,7 @@ log = logging.getLogger("worker")
 
 settings = get_settings()
 QUEUE = os.getenv("VISION_QUEUE", "vision_jobs")
+HIGHLIGHT_QUEUE = os.getenv("HIGHLIGHT_QUEUE", "highlight_jobs")
 
 
 async def _handle(raw: str) -> None:
@@ -42,10 +44,41 @@ async def _handle(raw: str) -> None:
         log.exception("Job %s failed", job_id)
 
 
+async def _handle_highlight(raw: str) -> None:
+    try:
+        payload = json.loads(raw)
+        highlight_id = int(payload["highlight_id"])
+    except (json.JSONDecodeError, KeyError, TypeError, ValueError):
+        log.warning("Skipped invalid highlight queue item: %r", raw)
+        return
+    log.info("Starting highlight %s", highlight_id)
+    try:
+        await run_highlight_job(highlight_id)
+        log.info("Highlight %s finished", highlight_id)
+    except Exception:  # noqa: BLE001
+        log.exception("Highlight %s failed", highlight_id)
+
+
 # BRPOP blocks on the Redis server side for BRPOP_TIMEOUT seconds. The client's socket
 # read timeout must be LONGER, otherwise redis-py raises TimeoutError instead of
 # returning None. We add a margin (+5s) and catch TimeoutError as "no job" anyway.
 BRPOP_TIMEOUT = 5
+
+
+async def _consume(client, queue: str, handler) -> None:
+    """Generic BRPOP loop: pops items off `queue` and passes them to `handler`."""
+    log.info("Worker listening on Redis list %r (%s)", queue, settings.redis_url)
+    while True:
+        try:
+            # BRPOP blocks until an item appears; returns (key, value).
+            item = await client.brpop(queue, timeout=BRPOP_TIMEOUT)
+        except RedisTimeoutError:
+            # Empty queue for the whole timeout — normal, keep waiting.
+            continue
+        if item is None:
+            continue
+        _, raw = item
+        await handler(raw)
 
 
 async def main() -> None:
@@ -54,19 +87,12 @@ async def main() -> None:
         decode_responses=True,
         socket_timeout=BRPOP_TIMEOUT + 5,
     )
-    log.info("Worker listening on Redis list %r (%s)", QUEUE, settings.redis_url)
     try:
-        while True:
-            try:
-                # BRPOP blocks until an item appears; returns (key, value).
-                item = await client.brpop(QUEUE, timeout=BRPOP_TIMEOUT)
-            except RedisTimeoutError:
-                # Empty queue for the whole timeout — normal, keep waiting.
-                continue
-            if item is None:
-                continue
-            _, raw = item
-            await _handle(raw)
+        # Vision and highlight jobs are independent queues consumed concurrently.
+        await asyncio.gather(
+            _consume(client, QUEUE, _handle),
+            _consume(client, HIGHLIGHT_QUEUE, _handle_highlight),
+        )
     finally:
         await client.aclose()
 

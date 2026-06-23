@@ -88,6 +88,33 @@ export interface EventTypeConfig {
   bg: string;
 }
 
+export type HighlightStatus = "pending" | "running" | "done" | "failed";
+
+export interface Highlight {
+  id: number;
+  analysis_id: number;
+  name: string;
+  status: HighlightStatus;
+  progress: number;
+  error: string | null;
+  share_token: string | null;
+  share_expires_at: string | null;
+  created_at: string;
+  finished_at: string | null;
+}
+
+export interface ShareLink {
+  token: string;
+  url: string;
+  expires_at: string;
+}
+
+export interface SharePublic {
+  name: string;
+  status: HighlightStatus;
+  expires_at: string;
+}
+
 // ---------------------------------------------------------------------------
 // Nowe metody API
 // ---------------------------------------------------------------------------
@@ -188,7 +215,35 @@ export const api = {
         ),
     },
 
+    highlights: {
+      create: (analysisId: number, name: string, eventIds: number[]): Promise<Highlight> =>
+        fetch(`${API}/api/analyses/${analysisId}/highlights`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name, event_ids: eventIds }),
+        }).then((r) => r.json()),
+      status: (analysisId: number, id: number): Promise<Highlight | null> =>
+        fetch(`${API}/api/analyses/${analysisId}/highlights/${id}/status`, { cache: "no-store" }).then((r) =>
+          r.ok ? r.json() : null
+        ),
+      streamUrl: (analysisId: number, id: number) =>
+        `${API}/api/analyses/${analysisId}/highlights/${id}/stream`,
+      share: (analysisId: number, id: number): Promise<ShareLink> =>
+        fetch(`${API}/api/analyses/${analysisId}/highlights/${id}/share`, { method: "POST" }).then((r) => r.json()),
+    },
+
     chatUrl: (analysisId: number) => `${API}/api/analyses/${analysisId}/chat`,
+  },
+
+  // Public share access (no auth, time-limited token).
+  share: {
+    meta: (token: string): Promise<{ ok: boolean; status: number; data: SharePublic | null }> =>
+      fetch(`${API}/api/share/${token}`, { cache: "no-store" }).then(async (r) => ({
+        ok: r.ok,
+        status: r.status,
+        data: r.ok ? ((await r.json()) as SharePublic) : null,
+      })),
+    streamUrl: (token: string) => `${API}/api/share/${token}/stream`,
   },
 
   eventTypes: {

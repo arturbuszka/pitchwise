@@ -8,6 +8,7 @@ import {
   AnalysisEvent,
   EventType,
   EventTypeConfig,
+  Highlight,
   VideoItem,
   VisionJob,
   api,
@@ -44,6 +45,12 @@ export function AnalysisDetailClient({
   const [uploadPct, setUploadPct] = useState<number | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
 
+  // Highlight creation
+  const [selectedEvents, setSelectedEvents] = useState<Set<number>>(new Set());
+  const [highlight, setHighlight] = useState<Highlight | null>(null);
+  const [shareUrl, setShareUrl] = useState<string | null>(null);
+  const [shareCopied, setShareCopied] = useState(false);
+
   const videoRef = useRef<HTMLVideoElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -63,6 +70,45 @@ export function AnalysisDetailClient({
       else next.add(type);
       return next;
     });
+  }
+
+  function toggleEventSelected(id: number) {
+    setSelectedEvents((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  async function handleGenerateHighlight() {
+    if (selectedEvents.size === 0) return;
+    setBusy(true);
+    setShareUrl(null);
+    setShareCopied(false);
+    try {
+      const h = await api.analyses.highlights.create(
+        analysis.id,
+        `Highlight · ${selectedEvents.size} events`,
+        [...selectedEvents]
+      );
+      setHighlight(h);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleShare() {
+    if (!highlight || highlight.status !== "done") return;
+    const link = await api.analyses.highlights.share(analysis.id, highlight.id).catch(() => null);
+    if (!link) return;
+    setShareUrl(link.url);
+    try {
+      await navigator.clipboard.writeText(link.url);
+      setShareCopied(true);
+    } catch {
+      // clipboard may be blocked — the URL is still shown for manual copy
+    }
   }
 
   async function refreshEvents() {
@@ -90,6 +136,22 @@ export function AnalysisDetailClient({
     return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [job, activeVideoId, analysis.id]);
+
+  // Poll the highlight render job until it finishes
+  useEffect(() => {
+    if (!highlight || highlight.status === "done" || highlight.status === "failed") return;
+    const interval = setInterval(async () => {
+      const updated = await api.analyses.highlights
+        .status(analysis.id, highlight.id)
+        .catch(() => null);
+      if (updated) setHighlight(updated);
+      if (updated?.status === "done" || updated?.status === "failed") {
+        clearInterval(interval);
+      }
+    }, 3000);
+    return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [highlight, analysis.id]);
 
   async function handleUpload(file: File) {
     setBusy(true);
@@ -271,6 +333,14 @@ export function AnalysisDetailClient({
               </span>
             )}
             <button
+              onClick={handleGenerateHighlight}
+              disabled={busy || selectedEvents.size === 0 || highlight?.status === "running" || highlight?.status === "pending"}
+              className="bg-[#14181f] hover:bg-[#2b3038] disabled:opacity-40 text-white rounded-[8px] px-3 py-1.5 text-[12px] font-semibold transition-colors"
+              title={selectedEvents.size === 0 ? "Select events first" : "Stitch a highlight reel from the selected events"}
+            >
+              ✦ Generate highlight{selectedEvents.size > 0 ? ` (${selectedEvents.size})` : ""}
+            </button>
+            <button
               onClick={handleAnalyze}
               disabled={busy || activeVideoId == null || job?.status === "running" || job?.status === "pending"}
               className="bg-[#2f5fe0] hover:bg-[#2451c7] disabled:opacity-50 text-white rounded-[8px] px-3 py-1.5 text-[12px] font-semibold transition-colors"
@@ -300,6 +370,75 @@ export function AnalysisDetailClient({
             </div>
           </div>
 
+          {/* Highlight reel */}
+          {highlight && (
+            <div className="px-5 pb-4">
+              <div className="border border-[#eaecf0] rounded-xl bg-white p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <p className="text-[14px] font-bold text-[#14181f]">
+                    ✦ {highlight.name}
+                  </p>
+                  <span
+                    className={`text-[12px] font-semibold ${
+                      highlight.status === "done"
+                        ? "text-green-600"
+                        : highlight.status === "failed"
+                          ? "text-red-500"
+                          : "text-[#2f5fe0]"
+                    }`}
+                  >
+                    {highlight.status === "done"
+                      ? "Ready"
+                      : highlight.status === "failed"
+                        ? "Render error"
+                        : `Rendering… ${Math.round(highlight.progress * 100)}%`}
+                  </span>
+                </div>
+
+                {highlight.status !== "done" && highlight.status !== "failed" && (
+                  <div className="h-1.5 bg-[#eceef1] rounded-full overflow-hidden mb-2">
+                    <div
+                      className="h-full bg-[#2f5fe0] rounded-full transition-all"
+                      style={{ width: `${Math.round(highlight.progress * 100)}%` }}
+                    />
+                  </div>
+                )}
+
+                {highlight.status === "failed" && (
+                  <p className="text-[12px] text-red-500">{highlight.error ?? "Failed to render highlight."}</p>
+                )}
+
+                {highlight.status === "done" && (
+                  <>
+                    <video
+                      key={highlight.id}
+                      src={api.analyses.highlights.streamUrl(analysis.id, highlight.id)}
+                      controls
+                      autoPlay
+                      className="w-full max-h-[340px] object-contain bg-black rounded-lg"
+                    />
+                    <div className="flex items-center gap-3 mt-3">
+                      <button
+                        onClick={handleShare}
+                        className="bg-[#2f5fe0] hover:bg-[#2451c7] text-white rounded-[8px] px-3 py-1.5 text-[12px] font-semibold transition-colors"
+                      >
+                        🔗 Copy share link
+                      </button>
+                      {shareUrl && (
+                        <span className="text-[12px] text-[#6b7280] truncate flex-1">
+                          {shareCopied ? "Copied! " : ""}
+                          <a href={shareUrl} target="_blank" rel="noreferrer" className="text-[#2f5fe0] hover:underline">
+                            {shareUrl}
+                          </a>
+                        </span>
+                      )}
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+          )}
+
           {/* Quick actions */}
           <div className="px-5 pb-4">
             <p className="text-[12px] font-bold uppercase tracking-[.05em] text-[#9aa0a8] mb-2">
@@ -314,6 +453,8 @@ export function AnalysisDetailClient({
             activeFilters={activeFilters}
             eventTypes={eventTypes}
             onSeek={seekVideo}
+            selectedEvents={selectedEvents}
+            onToggleSelected={toggleEventSelected}
           />
         </div>
       </main>

@@ -21,6 +21,7 @@ settings.LlmModel = Environment.GetEnvironmentVariable("LLM_MODEL") ?? settings.
 settings.WebOrigin = Environment.GetEnvironmentVariable("WEB_ORIGIN") ?? settings.WebOrigin;
 settings.WebOriginAlt = Environment.GetEnvironmentVariable("WEB_ORIGIN_ALT") ?? settings.WebOriginAlt;
 settings.VisionQueue = Environment.GetEnvironmentVariable("VISION_QUEUE") ?? settings.VisionQueue;
+settings.HighlightQueue = Environment.GetEnvironmentVariable("HIGHLIGHT_QUEUE") ?? settings.HighlightQueue;
 settings.EnsureDirs();
 builder.Services.AddSingleton(settings);
 
@@ -31,6 +32,7 @@ builder.Services.AddDbContext<AppDbContext>(opt => opt.UseNpgsql(settings.Databa
 builder.Services.AddSingleton<IConnectionMultiplexer>(
     _ => ConnectionMultiplexer.Connect(RedisConfig(settings.RedisUrl)));
 builder.Services.AddSingleton<VisionQueue>();
+builder.Services.AddSingleton<HighlightQueue>();
 
 // --- LLM ---
 builder.Services.AddHttpClient<LlmClient>(c => c.Timeout = TimeSpan.FromSeconds(120));
@@ -51,6 +53,7 @@ builder.Services.AddControllers().AddJsonOptions(o =>
     o.JsonSerializerOptions.Converters.Add(new EventSourceJsonConverter());
     o.JsonSerializerOptions.Converters.Add(new SessionStatusJsonConverter());
     o.JsonSerializerOptions.Converters.Add(new VisionJobStatusJsonConverter());
+    o.JsonSerializerOptions.Converters.Add(new HighlightStatusJsonConverter());
 });
 
 // --- CORS (1:1 with main.py) ---

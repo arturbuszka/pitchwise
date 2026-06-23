@@ -65,3 +65,12 @@ public class VisionJobStatusJsonConverter : JsonConverter<VisionJobStatus>
             _ => "pending",
         });
 }
+
+public class HighlightStatusJsonConverter : JsonConverter<HighlightStatus>
+{
+    public override HighlightStatus Read(ref Utf8JsonReader reader, Type t, JsonSerializerOptions o)
+        => EnumMap.HighlightFromDb(reader.GetString() ?? "pending");
+
+    public override void Write(Utf8JsonWriter writer, HighlightStatus value, JsonSerializerOptions o)
+        => writer.WriteStringValue(EnumMap.HighlightToDb(value));
+}

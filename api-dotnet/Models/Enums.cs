@@ -37,3 +37,11 @@ public enum EventSource
     Auto,
     Manual,
 }
+
+public enum HighlightStatus
+{
+    Pending,
+    Running,
+    Done,
+    Failed,
+}

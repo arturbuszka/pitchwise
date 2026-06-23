@@ -54,6 +54,13 @@ class VisionJobStatus(str, Enum):
     failed = "failed"
 
 
+class HighlightStatus(str, Enum):
+    pending = "pending"
+    running = "running"
+    done = "done"
+    failed = "failed"
+
+
 class EventType(str, Enum):
     goal = "goal"
     shot = "shot"
@@ -163,3 +170,26 @@ class Clip(SQLModel, table=True):
     start_seconds: float
     end_seconds: float
     created_at: datetime = Field(default_factory=_now, sa_column=_tz_dt())
+
+
+class Highlight(SQLModel, table=True):
+    """A highlight reel stitched from clips around a set of selected events.
+
+    .NET owns this schema (EnsureCreated); the worker only reads/writes rows.
+    event_ids is a CSV of Event ids (e.g. "12,15,18"). share_token/share_expires_at
+    back the public, time-limited share link.
+    """
+    __tablename__ = "highlight"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    analysis_id: int = Field(foreign_key="analysissession.id", index=True)
+    name: str
+    event_ids: str = ""                             # CSV of Event ids
+    status: HighlightStatus = Field(default=HighlightStatus.pending, sa_column=_str_enum(HighlightStatus))
+    progress: float = 0.0                           # 0..1
+    filename: Optional[str] = None                  # stitched file in clips_dir
+    error: Optional[str] = None
+    share_token: Optional[str] = Field(default=None, index=True)
+    share_expires_at: Optional[datetime] = Field(default=None, sa_column=_tz_dt(nullable=True))
+    created_at: datetime = Field(default_factory=_now, sa_column=_tz_dt())
+    finished_at: Optional[datetime] = Field(default=None, sa_column=_tz_dt(nullable=True))

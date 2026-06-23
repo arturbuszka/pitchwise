@@ -29,11 +29,15 @@ export function EventResultsPanel({
   activeFilters,
   eventTypes,
   onSeek,
+  selectedEvents,
+  onToggleSelected,
 }: {
   events: AnalysisEvent[];
   activeFilters: Set<EventType>;
   eventTypes: EventTypeConfig[];
   onSeek: (seconds: number) => void;
+  selectedEvents: Set<number>;
+  onToggleSelected: (id: number) => void;
 }) {
   const cfg = new Map(eventTypes.map((t) => [t.key, t]));
 
@@ -82,12 +86,26 @@ export function EventResultsPanel({
               const player = playerLabel(ev);
               const desc = ev.note ?? ev.label;
 
+              const isSelected = selectedEvents.has(ev.id);
+
               return (
                 <div
                   key={ev.id}
                   onClick={() => onSeek(ev.timestamp_seconds)}
-                  className="flex items-center gap-3 bg-white rounded-xl px-3 py-2.5 cursor-pointer hover:shadow-sm border border-[#eceef1] hover:border-[#2f5fe0]/30 transition-all"
+                  className={`flex items-center gap-3 bg-white rounded-xl px-3 py-2.5 cursor-pointer hover:shadow-sm border transition-all ${
+                    isSelected ? "border-[#2f5fe0] bg-[#f5f8ff]" : "border-[#eceef1] hover:border-[#2f5fe0]/30"
+                  }`}
                 >
+                  {/* Select for highlight */}
+                  <input
+                    type="checkbox"
+                    checked={isSelected}
+                    onClick={(e) => e.stopPropagation()}
+                    onChange={() => onToggleSelected(ev.id)}
+                    className="w-4 h-4 shrink-0 accent-[#2f5fe0] cursor-pointer"
+                    title="Add to highlight"
+                  />
+
                   {/* Timestamp */}
                   <span className="bg-[#14181f] text-white text-xs font-mono rounded-[7px] px-2 py-1 shrink-0 tabular-nums">
                     {formatTime(ev.timestamp_seconds)}

@@ -66,3 +66,23 @@ public class Clip
     public double EndSeconds { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }
+
+// A highlight reel stitched from clips around a coach-selected set of events.
+// Rendered in the background by the worker (ffmpeg concat), then streamed via
+// HTTP Range. ShareToken/ShareExpiresAt back the public, time-limited share link.
+public class Highlight
+{
+    public int Id { get; set; }
+    public int AnalysisId { get; set; }
+    public string Name { get; set; } = string.Empty;
+    // CSV of selected event ids (e.g. "12,15,18"). Stored as text for simplicity.
+    public string EventIds { get; set; } = string.Empty;
+    public HighlightStatus Status { get; set; } = HighlightStatus.Pending;
+    public double Progress { get; set; }
+    public string? Filename { get; set; }
+    public string? Error { get; set; }
+    public string? ShareToken { get; set; }
+    public DateTime? ShareExpiresAt { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime? FinishedAt { get; set; }
+}
