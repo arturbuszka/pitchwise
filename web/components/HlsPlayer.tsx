@@ -37,10 +37,18 @@ export function HlsPlayer({
       return;
     }
 
-    // Native HLS (Safari, iOS).
+    // Native HLS (Safari, iOS, Android Chrome).
     if (video.canPlayType("application/vnd.apple.mpegurl")) {
       video.src = hlsUrl;
-      return;
+      // If the HLS manifest/segments fail to load (e.g. edge unreachable, expired
+      // signature), fall back to the MP4 so playback still works.
+      video.onerror = () => {
+        video.onerror = null;
+        useMp4();
+      };
+      return () => {
+        video.onerror = null;
+      };
     }
 
     // hls.js (Chrome, Firefox).
