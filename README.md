@@ -4,6 +4,8 @@ Automated sports match analysis platform. Upload a game recording, let the compu
 vision pipeline detect goals and shots, and query a streaming AI chat assistant for
 coaching insights.
 
+![PitchWise](docs/screenshot.png)
+
 ---
 
 ## Features
