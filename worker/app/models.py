@@ -172,6 +172,19 @@ class Clip(SQLModel, table=True):
     created_at: datetime = Field(default_factory=_now, sa_column=_tz_dt())
 
 
+class LiveSession(SQLModel, table=True):
+    """A live analysis session consuming an external HLS/RTMP stream."""
+    __tablename__ = "livesession"
+
+    id: str = Field(primary_key=True)               # UUID4 string
+    source_url: str
+    status: str = "idle"                             # idle | running | stopped
+    ws_url: str = ""
+    hls_url: str = ""
+    created_at: datetime = Field(default_factory=_now, sa_column=_tz_dt())
+    stopped_at: Optional[datetime] = Field(default=None, sa_column=_tz_dt(nullable=True))
+
+
 class Highlight(SQLModel, table=True):
     """A highlight reel stitched from clips around a set of selected events.
 

@@ -28,7 +28,14 @@ Start-Process powershell -ArgumentList "-NoExit", "-Command", "
     `$env:DATABASE_URL='postgresql+asyncpg://pitchwise:pitchwise@localhost:5432/pitchwise';
     `$env:REDIS_URL='redis://localhost:6379';
     `$env:STORAGE_DIR='$storage';
-    .\.venv\Scripts\python.exe -m app.worker
+    `$env:WEB_ORIGIN='http://localhost:3000';
+    # Use the winget-installed ffmpeg 8.x (has -hls_flags). Without this, an old
+    # ffmpeg earlier on PATH (e.g. Panda3D's 2013 build) breaks live HLS encoding.
+    `$ff = Get-ChildItem `"`$env:LOCALAPPDATA\Microsoft\WinGet\Packages`" -Recurse -Filter ffmpeg.exe -ErrorAction SilentlyContinue | Select-Object -First 1;
+    if (`$ff) { `$env:FFMPEG_PATH = `$ff.FullName };
+    `$python = (Resolve-Path '.\.venv\Scripts\python.exe').Path;
+    Start-Job -ScriptBlock { param(`$p) & `$p -m app.worker } -ArgumentList `$python | Out-Null;
+    & `$python -m uvicorn live.server:app --host 127.0.0.1 --port 8001
 " -WindowStyle Normal
 
 # Frontend (:3000) - NEXT_PUBLIC_API_URL points to http://localhost:8000.
@@ -39,6 +46,6 @@ Start-Process powershell -ArgumentList "-NoExit", "-Command", "
 
 Write-Host "Started:"
 Write-Host "  API (.NET)      -> http://localhost:8000"
-Write-Host "  Worker (Python) -> listening on the Redis 'vision_jobs' queue"
+Write-Host "  Worker (Python) -> Redis 'vision_jobs' queue + live WebSocket :8001"
 Write-Host "  Web             -> http://localhost:3000"
 Write-Host "  Postgres        -> localhost:5432   Redis -> localhost:6379"

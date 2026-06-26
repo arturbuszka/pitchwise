@@ -7,10 +7,12 @@ WORKDIR /app
 COPY worker/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Build context is the repo root — worker/app and vision are siblings under /app.
+# Build context is the repo root — worker/app, worker/live and vision are siblings under /app.
 COPY worker/app ./app
+COPY worker/live ./live
 COPY vision ./vision
 
 ENV PYTHONPATH=/app
-# The worker pops jobs off the Redis list (BRPOP) and calls the vision pipeline. No HTTP server.
-CMD ["python", "-m", "app.worker"]
+
+# Start both the Redis queue worker and the live WebSocket/HLS server.
+CMD ["sh", "-c", "python -m app.worker & uvicorn live.server:app --host 0.0.0.0 --port 8001 & wait"]

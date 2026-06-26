@@ -27,6 +27,9 @@ public class AppSettings
     // Name of the Redis list the highlight worker loop pops from.
     public string HighlightQueue { get; set; } = "highlight_jobs";
 
+    // Name of the Redis list the annotated video worker pops from.
+    public string AnnotatedQueue { get; set; } = "annotated_jobs";
+
     // How long a generated share link stays valid.
     public int ShareLinkTtlHours { get; set; } = 24;
 
@@ -37,6 +40,9 @@ public class AppSettings
     public string HlsSigningSecret { get; set; } = "devsecret";
     // How long a signed HLS URL stays valid.
     public int HlsLinkTtlSeconds { get; set; } = 3600;
+
+    // URL of the Python live WebSocket + HLS server (port 8001).
+    public string LiveWorkerUrl { get; set; } = "http://localhost:8001";
 
     public string UploadsDir => Path.Combine(StorageDir, "uploads");
     public string ClipsDir => Path.Combine(StorageDir, "clips");

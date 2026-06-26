@@ -271,7 +271,30 @@ export const api = {
       return fetch(`${API}/api/event-types${qs}`, { cache: "no-store" }).then((r) => r.json());
     },
   },
+
+  live: {
+    create: (sourceUrl: string): Promise<LiveSession> =>
+      fetch(`${API}/api/live`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ source_url: sourceUrl }),
+      }).then((r) => r.json()),
+    get: (id: string): Promise<LiveSession> =>
+      fetch(`${API}/api/live/${id}`, { cache: "no-store" }).then((r) => r.json()),
+    stop: (id: string): Promise<LiveSession> =>
+      fetch(`${API}/api/live/${id}`, { method: "DELETE" }).then((r) => r.json()),
+  },
 };
+
+export interface LiveSession {
+  id: string;
+  source_url: string;
+  status: "idle" | "running" | "stopped";
+  ws_url: string;
+  hls_url: string;
+  created_at: string;
+  stopped_at: string | null;
+}
 
 export function formatTime(seconds: number): string {
   const m = Math.floor(seconds / 60);

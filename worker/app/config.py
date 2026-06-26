@@ -26,6 +26,14 @@ class Settings(BaseSettings):
 
     # Vision
     yolo_model_path: str = ""
+    # ffmpeg binary used for live HLS encoding. Defaults to PATH lookup; set
+    # FFMPEG_PATH to an absolute path when an older ffmpeg precedes it on PATH
+    # (e.g. a Panda3D-bundled build that lacks -hls_flags).
+    ffmpeg_path: str = "ffmpeg"
+    # YOLO inference resolution for live sessions. 640 = model default (best quality,
+    # ~28 fps on a GTX 1660). Lower it (e.g. 480) to trade accuracy for speed on
+    # weaker GPUs/CPU.
+    live_imgsz: int = 640
     # Which frames to analyze. A smaller stride = a denser ball track (better event
     # detection on fast motion/close-ups) but slower analysis. 3 is a compromise; raise
     # it (e.g. 5) for long recordings where time matters.

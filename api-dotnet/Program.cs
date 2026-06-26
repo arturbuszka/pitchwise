@@ -26,6 +26,7 @@ settings.HlsBaseUrl = Environment.GetEnvironmentVariable("HLS_BASE_URL") ?? sett
 settings.HlsSigningSecret = Environment.GetEnvironmentVariable("HLS_SIGNING_SECRET") ?? settings.HlsSigningSecret;
 if (int.TryParse(Environment.GetEnvironmentVariable("HLS_LINK_TTL_SECONDS"), out var hlsTtl))
     settings.HlsLinkTtlSeconds = hlsTtl;
+settings.LiveWorkerUrl = Environment.GetEnvironmentVariable("LIVE_WORKER_URL") ?? settings.LiveWorkerUrl;
 settings.EnsureDirs();
 builder.Services.AddSingleton(settings);
 
@@ -75,9 +76,24 @@ using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
     db.Database.EnsureCreated();
+    // EnsureCreated only runs when the DB is brand-new; for tables added after initial
+    // deployment we apply a manual CREATE TABLE IF NOT EXISTS so existing deployments
+    // get the new table without a full migration framework.
+    db.Database.ExecuteSqlRaw("""
+        CREATE TABLE IF NOT EXISTS livesession (
+            id TEXT PRIMARY KEY,
+            source_url TEXT NOT NULL DEFAULT '',
+            status TEXT NOT NULL DEFAULT 'idle',
+            ws_url TEXT NOT NULL DEFAULT '',
+            hls_url TEXT NOT NULL DEFAULT '',
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            stopped_at TIMESTAMPTZ NULL
+        )
+    """);
 }
 
 app.UseCors();
+app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
 app.MapControllers();
 app.Run();
 

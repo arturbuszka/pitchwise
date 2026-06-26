@@ -11,6 +11,7 @@ public class AppDbContext : DbContext
     public AppDbContext(DbContextOptions<AppDbContext> options) : base(options) { }
 
     public DbSet<AnalysisSession> AnalysisSessions => Set<AnalysisSession>();
+    public DbSet<LiveSession> LiveSessions => Set<LiveSession>();
     public DbSet<Video> Videos => Set<Video>();
     public DbSet<VisionJob> VisionJobs => Set<VisionJob>();
     public DbSet<Event> Events => Set<Event>();
@@ -113,6 +114,19 @@ public class AppDbContext : DbContext
             e.Property(x => x.CreatedAt).HasColumnName("created_at");
             e.HasIndex(x => x.EventId);
             e.HasIndex(x => x.VideoId);
+        });
+
+        b.Entity<LiveSession>(e =>
+        {
+            e.ToTable("livesession");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.SourceUrl).HasColumnName("source_url");
+            e.Property(x => x.Status).HasColumnName("status");
+            e.Property(x => x.WsUrl).HasColumnName("ws_url");
+            e.Property(x => x.HlsUrl).HasColumnName("hls_url");
+            e.Property(x => x.CreatedAt).HasColumnName("created_at");
+            e.Property(x => x.StoppedAt).HasColumnName("stopped_at");
         });
 
         b.Entity<Highlight>(e =>
