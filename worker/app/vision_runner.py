@@ -62,7 +62,7 @@ async def run_vision_job(job_id: int) -> None:
             result = await asyncio.to_thread(
                 analyze_video,
                 video_path,
-                yolo_model_path=settings.yolo_model_path or None,
+                yolo_model_path=settings.effective_yolo_model_path,
                 frame_stride=settings.frame_stride,
                 on_progress=on_progress,
             )

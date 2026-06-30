@@ -17,7 +17,7 @@ def get_shared_detector() -> "Detector":
         from vision.detector import Detector
         from live.config import settings
 
-        model_path = settings.yolo_model_path or None
+        model_path = settings.effective_yolo_model_path
         _shared_detector = Detector(
             model_path=model_path,
             frame_stride=1,

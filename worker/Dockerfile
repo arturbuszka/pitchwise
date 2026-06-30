@@ -11,6 +11,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY worker/app ./app
 COPY worker/live ./live
 COPY vision ./vision
+# Football model weights. `worker/models/*.pt` is git-ignored, so on a clean checkout the
+# directory only carries README/fetch_model and the worker falls back to yolo11n.pt. To
+# bake the real model into the image, fetch it into worker/models/football.pt before
+# building (see worker/models/README.md) — or use Git LFS.
+COPY worker/models ./models
 
 ENV PYTHONPATH=/app
 

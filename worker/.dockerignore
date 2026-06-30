@@ -4,4 +4,6 @@ __pycache__
 *.pyo
 storage
 *.pt
+# but keep the vendored football model so it can be baked into the image
+!models/football.pt
 *.log

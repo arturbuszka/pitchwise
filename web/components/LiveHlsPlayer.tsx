@@ -17,14 +17,20 @@ export function LiveHlsPlayer({
     const video = videoRef.current;
     if (!video || !hlsUrl) return;
 
-    // Native HLS (Safari/iOS)
-    if (video.canPlayType("application/vnd.apple.mpegurl")) {
-      video.src = hlsUrl;
-      video.play().catch(() => {});
+    // Prefer hls.js wherever it's supported (Chrome/Edge/Firefox). Chrome reports a
+    // truthy canPlayType("application/vnd.apple.mpegurl") ("maybe") but does NOT actually
+    // play HLS natively — going down the native branch there left a black 0:00 frame.
+    // Native HLS is the fallback only when hls.js can't run (real Safari/iOS).
+    if (!Hls.isSupported()) {
+      if (video.canPlayType("application/vnd.apple.mpegurl")) {
+        console.log("[LiveHlsPlayer] native HLS playback", hlsUrl);
+        video.src = hlsUrl;
+        video.play().catch((err) => console.warn("[LiveHlsPlayer] native play() rejected:", err));
+      } else {
+        console.error("[LiveHlsPlayer] neither hls.js nor native HLS is supported");
+      }
       return;
     }
-
-    if (!Hls.isSupported()) return;
 
     const hls = new Hls({
       liveSyncDurationCount: 3,

@@ -41,9 +41,12 @@ class EventConfig:
     cooldown_seconds: float = 8.0       # min gap between events of the same type
 
     # --- trajectory quality (noise reduction from wrong YOLO detections) ---
+    # With the football-specific model the ball is detected on far more frames and more
+    # confidently than with COCO yolo11n, so the track is denser and needs less gap
+    # interpolation. These remain starting points — tune on real footage.
     max_gap_frames: int = 2             # interpolate ball detection gaps <= this many samples
     smooth_window: int = 3              # moving-average window for speed
-    min_ball_confidence: float = 0.3    # ignore weak ball detections when building the track
+    min_ball_confidence: float = 0.35   # ignore weak ball detections when building the track
 
     # --- frame-edge "goal" rule (goal proxy without homography) ---
     ball_lost_frames: int = 4           # samples without the ball after a spike => disappearance

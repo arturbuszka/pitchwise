@@ -60,13 +60,30 @@ export function LiveSessionView({ session, onStop }: Props) {
       }
 
       switch (msg.type) {
-        case "ready":
+        case "ready": {
           setStatus("ready");
-          // The hls_url from the WS is relative to the live server — resolve against ws_url origin
+          // hls_url from the WS is relative to the live server (e.g. /live_hls/<sid>/index.m3u8).
+          // Resolve it against the live server's HTTP origin. Use the actual socket URL
+          // (ws.url is always absolute & normalized) and guard the whole thing: a throw
+          // here previously left hlsUrl=null after "ready" → green "Live" but no player.
           const rawUrl = msg.hls_url as string;
-          const liveOrigin = new URL(session.ws_url.replace("ws://", "http://").replace("wss://", "https://")).origin;
-          setHlsUrl(rawUrl.startsWith("/") ? liveOrigin + rawUrl : rawUrl);
+          let resolved = rawUrl;
+          if (rawUrl.startsWith("/")) {
+            try {
+              const httpUrl = (ws.url || session.ws_url)
+                .replace(/^ws:/, "http:")
+                .replace(/^wss:/, "https:");
+              resolved = new URL(httpUrl).origin + rawUrl;
+            } catch (err) {
+              console.warn("[LiveSessionView] could not derive live origin from", ws.url, session.ws_url, err);
+              // Last-resort fallback: resolve against the page origin.
+              resolved = window.location.origin + rawUrl;
+            }
+          }
+          console.log("[LiveSessionView] ready → hlsUrl =", resolved, "(raw:", rawUrl, "ws.url:", ws.url, ")");
+          setHlsUrl(resolved);
           break;
+        }
         case "positions":
           elapsedRef.current = (msg.timestamp as number) ?? 0;
           setPlayers((msg.players as PlayerDot[]) ?? []);

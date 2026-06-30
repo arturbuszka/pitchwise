@@ -65,7 +65,7 @@ async def run_annotated_job(job_id: int) -> None:
                     video_path,
                     out_mp4,
                     out_hls_dir,
-                    yolo_model_path=settings.yolo_model_path or None,
+                    yolo_model_path=settings.effective_yolo_model_path,
                     on_progress=_progress,
                 ),
             )

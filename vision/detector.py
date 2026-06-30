@@ -13,6 +13,7 @@ from collections.abc import Iterator
 from vision.types import (
     CLASS_BALL,
     CLASS_GOAL,
+    CLASS_GOALKEEPER,
     CLASS_PLAYER,
     CLASS_REFEREE,
     Detection,
@@ -24,10 +25,15 @@ from vision.types import (
 _CLASS_ALIASES = {
     "ball": CLASS_BALL,
     "sports ball": CLASS_BALL,
+    "football": CLASS_BALL,
+    "soccer ball": CLASS_BALL,
     "player": CLASS_PLAYER,
     "person": CLASS_PLAYER,
     "referee": CLASS_REFEREE,
-    "goalkeeper": "goalkeeper",
+    "main referee": CLASS_REFEREE,
+    "side referee": CLASS_REFEREE,
+    "goalkeeper": CLASS_GOALKEEPER,
+    "goal keeper": CLASS_GOALKEEPER,
     # Stage 2 hook: active only when a football-specific model returns a goal class.
     "goal": CLASS_GOAL,
     "goalpost": CLASS_GOAL,

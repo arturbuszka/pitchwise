@@ -235,62 +235,142 @@ class ExternalPreviewSession:
             await self._send_error("ffmpeg encode process failed to start")
             return
 
-        playlist_path = self._out_dir / "index.m3u8"
-        hls_ready_sent = False
-        decode_future = None  # not used in passthrough mode
-
-        # ==================================================================
-        # PASSTHROUGH MODE — bare frame pipe, NO analysis. Debugging: confirm
-        # pixels actually flow cv2 → ffmpeg → HLS → player before re-adding the
-        # YOLO/overlay/pacing layer. Read a frame, write it straight to ffmpeg.
-        # ==================================================================
-        frame_idx = 0
+        # Step 4: run the chosen pipeline. "passthrough" pipes raw frames (always works,
+        # the safe default); "detect" runs YOLO + overlay. Switch via LIVE_PIPELINE_MODE.
+        mode = (settings.live_pipeline_mode or "passthrough").strip().lower()
+        logger.info("ExternalPreviewSession %s pipeline mode=%s", self.session_id, mode)
         try:
-            while not self._stop.is_set():
-                ok, frame = await loop.run_in_executor(None, cap.read)
-                if not ok:
-                    logger.info("ExternalPreviewSession %s: stream ended (read failed)", self.session_id)
-                    break
-
-                # Resize to the encoder's geometry if the source differs.
-                fh, fw = frame.shape[:2]
-                if fw != w or fh != h:
-                    frame = cv2.resize(frame, (w, h))
-
-                try:
-                    ffmpeg_encode.stdin.write(frame.tobytes())
-                except (BrokenPipeError, OSError):
-                    if not hls_ready_sent:
-                        tail = self._ffmpeg_stderr_tail()
-                        msg = "ffmpeg encoder exited unexpectedly"
-                        if tail:
-                            msg += f": {tail}"
-                        logger.error("ExternalPreviewSession %s ffmpeg failed: %s", self.session_id, tail or "(no stderr)")
-                        await self._send_error(msg)
-                    break
-
-                frame_idx += 1
-                if frame_idx % 50 == 0:
-                    logger.info("ExternalPreviewSession %s passthrough: wrote %d frames, playlist=%s",
-                                self.session_id, frame_idx, playlist_path.exists())
-
-                # Signal ready as soon as ffmpeg has written the first playlist.
-                if not hls_ready_sent and playlist_path.exists() and playlist_path.stat().st_size > 0:
-                    hls_url = f"/live_hls/{self.session_id}/index.m3u8"
-                    await self.ws.send_text(json.dumps({"type": "ready", "hls_url": hls_url}))
-                    logger.info("ExternalPreviewSession %s ready, hls=%s", self.session_id, hls_url)
-                    hls_ready_sent = True
-
+            if mode == "detect":
+                await self._run_detect(cap, ffmpeg_encode, loop, w, h)
+            else:
+                await self._run_passthrough(cap, ffmpeg_encode, loop, w, h)
         finally:
             self._stop.set()
-            if decode_future is not None:
-                decode_future.cancel()
             # Stop the writer thread (sentinel) before killing ffmpeg.
             try:
                 self._encode_q.put_nowait(None)
             except queue.Full:
                 pass
             await loop.run_in_executor(None, self._kill_ffmpeg, ffmpeg_encode)
+
+    async def _send_ready_if_needed(self, hls_ready_sent: bool, playlist_path: Path) -> bool:
+        """Emit the 'ready' message once the first playlist is on disk. Returns the new
+        hls_ready_sent flag."""
+        if hls_ready_sent:
+            return True
+        if playlist_path.exists() and playlist_path.stat().st_size > 0:
+            hls_url = f"/live_hls/{self.session_id}/index.m3u8"
+            await self.ws.send_text(json.dumps({"type": "ready", "hls_url": hls_url}))
+            logger.info("ExternalPreviewSession %s ready, hls=%s", self.session_id, hls_url)
+            return True
+        return False
+
+    async def _write_frame(self, ffmpeg_encode, frame, hls_ready_sent: bool) -> bool:
+        """Write one BGR frame to ffmpeg's stdin. Returns True on success; on a broken
+        pipe surfaces the ffmpeg error (only before 'ready') and returns False."""
+        try:
+            ffmpeg_encode.stdin.write(frame.tobytes())
+            return True
+        except (BrokenPipeError, OSError):
+            if not hls_ready_sent:
+                tail = self._ffmpeg_stderr_tail()
+                msg = "ffmpeg encoder exited unexpectedly"
+                if tail:
+                    msg += f": {tail}"
+                logger.error("ExternalPreviewSession %s ffmpeg failed: %s", self.session_id, tail or "(no stderr)")
+                await self._send_error(msg)
+            return False
+
+    # ------------------------------------------------------------------
+    # Pipeline mode: passthrough (raw frames, no analysis)
+    # ------------------------------------------------------------------
+
+    async def _run_passthrough(self, cap, ffmpeg_encode, loop, w: int, h: int) -> None:
+        """Bare frame pipe, NO analysis: cv2 → ffmpeg → HLS. The lightest path and the
+        safe default — confirms pixels flow before any YOLO/overlay work."""
+        import cv2
+
+        playlist_path = self._out_dir / "index.m3u8"
+        hls_ready_sent = False
+        frame_idx = 0
+        while not self._stop.is_set():
+            ok, frame = await loop.run_in_executor(None, cap.read)
+            if not ok:
+                logger.info("ExternalPreviewSession %s: stream ended (read failed)", self.session_id)
+                break
+
+            fh, fw = frame.shape[:2]
+            if fw != w or fh != h:
+                frame = cv2.resize(frame, (w, h))
+
+            if not await self._write_frame(ffmpeg_encode, frame, hls_ready_sent):
+                break
+
+            frame_idx += 1
+            if frame_idx % 50 == 0:
+                logger.info("ExternalPreviewSession %s passthrough: wrote %d frames, playlist=%s",
+                            self.session_id, frame_idx, playlist_path.exists())
+
+            hls_ready_sent = await self._send_ready_if_needed(hls_ready_sent, playlist_path)
+
+    # ------------------------------------------------------------------
+    # Pipeline mode: detect (YOLO + overlay on every frame)
+    # ------------------------------------------------------------------
+
+    async def _run_detect(self, cap, ffmpeg_encode, loop, w: int, h: int) -> None:
+        """Run YOLO detection + draw the enabled overlay layers on every frame, then pipe
+        to ffmpeg. Reuses the shared detector, draw_overlay and StatsTracker. Inference
+        runs on the dedicated single-thread pool so it never starves the event loop.
+
+        NOTE: throughput is bounded by YOLO fps; until the frame-pacing fix lands this can
+        deliver few frames per HLS segment (see the plan's frame-starvation note)."""
+        import cv2
+
+        detector = get_shared_detector()
+        playlist_path = self._out_dir / "index.m3u8"
+        hls_ready_sent = False
+        frame_idx = 0
+        while not self._stop.is_set():
+            ok, frame = await loop.run_in_executor(None, cap.read)
+            if not ok:
+                logger.info("ExternalPreviewSession %s: stream ended (read failed)", self.session_id)
+                break
+
+            fh, fw = frame.shape[:2]
+            if fw != w or fh != h:
+                frame = cv2.resize(frame, (w, h))
+
+            ts = frame_idx / max(1.0, ENCODE_FPS_CAP)
+            t0 = time.monotonic()
+            # Inference + overlay on the dedicated pool (CPU/GPU bound, blocking).
+            fr = await loop.run_in_executor(
+                self._infer_pool, detector.detect_frame, frame, frame_idx, ts
+            )
+            if self.flags.any_overlay():
+                draw_overlay(frame, fr, self.flags)
+            infer_ms = (time.monotonic() - t0) * 1000.0
+
+            counts: dict[str, int] = {}
+            for d in fr.detections:
+                counts[d.cls] = counts.get(d.cls, 0) + 1
+            self._stats.record(infer_ms, counts)
+
+            if not await self._write_frame(ffmpeg_encode, frame, hls_ready_sent):
+                break
+
+            frame_idx += 1
+            if frame_idx % 30 == 0:
+                try:
+                    await self.ws.send_text(json.dumps({
+                        "type": "stats",
+                        "fps": round(self._stats.fps(), 1),
+                        "infer_ms": round(infer_ms, 1),
+                        "counts": counts,
+                    }))
+                except Exception:
+                    pass
+
+            hls_ready_sent = await self._send_ready_if_needed(hls_ready_sent, playlist_path)
 
     async def _emit_tip(self, snapshots: list[dict]) -> None:
         tip = await get_tactical_tip(snapshots, settings)
