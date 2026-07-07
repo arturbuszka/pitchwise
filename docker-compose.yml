@@ -50,7 +50,7 @@ services:
   worker:
     build:
       context: .
-      dockerfile: worker/Dockerfile
+      dockerfile: worker-dotnet/Dockerfile
     ports:
       - "8001:8001"
     deploy:
@@ -61,9 +61,13 @@ services:
               count: 1
               capabilities: [gpu]
     environment:
-      DATABASE_URL: "postgresql+asyncpg://pitchwise:pitchwise@postgres:5432/pitchwise"
+      # .NET worker/live share the API's schema → Npgsql connection string (not asyncpg).
+      DATABASE_CONNECTION: "Host=postgres;Port=5432;Database=pitchwise;Username=pitchwise;Password=pitchwise"
       REDIS_URL: "redis://redis:6379"
       STORAGE_DIR: "/app/storage"
+      # yolo11n baked in; mount + point here for the football model.
+      YOLO_MODEL_PATH: "/app/models/yolo11n.onnx"
+      LIVE_PIPELINE_MODE: "passthrough"
     volumes:
       - ./storage:/app/storage
     depends_on:

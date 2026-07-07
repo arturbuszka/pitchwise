@@ -27,9 +27,6 @@ public class AppSettings
     // Name of the Redis list the highlight worker loop pops from.
     public string HighlightQueue { get; set; } = "highlight_jobs";
 
-    // Name of the Redis list the annotated video worker pops from.
-    public string AnnotatedQueue { get; set; } = "annotated_jobs";
-
     // How long a generated share link stays valid.
     public int ShareLinkTtlHours { get; set; } = 24;
 
