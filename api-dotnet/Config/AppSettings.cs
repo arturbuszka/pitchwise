@@ -38,6 +38,9 @@ public class AppSettings
     // How long a signed HLS URL stays valid.
     public int HlsLinkTtlSeconds { get; set; } = 3600;
 
+    // URL of the Python live WebSocket + HLS server (port 8001).
+    public string LiveWorkerUrl { get; set; } = "http://localhost:8001";
+
     public string UploadsDir => Path.Combine(StorageDir, "uploads");
     public string ClipsDir => Path.Combine(StorageDir, "clips");
     public string HlsDir => Path.Combine(StorageDir, "hls");

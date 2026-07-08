@@ -67,6 +67,17 @@ public class Clip
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }
 
+public class LiveSession
+{
+    public string Id { get; set; } = string.Empty;  // UUID4
+    public string SourceUrl { get; set; } = string.Empty;
+    public string Status { get; set; } = "idle";    // idle | running | stopped
+    public string WsUrl { get; set; } = string.Empty;
+    public string HlsUrl { get; set; } = string.Empty;
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime? StoppedAt { get; set; }
+}
+
 // A highlight reel stitched from clips around a coach-selected set of events.
 // Rendered in the background by the worker (ffmpeg concat), then streamed via
 // HTTP Range. ShareToken/ShareExpiresAt back the public, time-limited share link.

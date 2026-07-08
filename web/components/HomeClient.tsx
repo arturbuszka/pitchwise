@@ -72,7 +72,14 @@ export function HomeClient() {
             Pitch<span className="text-[#2f5fe0]">Wise</span>
           </span>
         </div>
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3">
+          <Link
+            href="/live"
+            className="border border-[#2f5fe0] text-[#2f5fe0] hover:bg-[#eef1ff] text-[14px] font-semibold rounded-[10px] px-4 py-2.5 flex items-center gap-1.5 transition-colors"
+          >
+            <span className="text-[15px] leading-none">▶</span>
+            Live analysis
+          </Link>
           <button
             onClick={() => setModalOpen(true)}
             className="bg-[#2f5fe0] hover:bg-[#2451c7] text-white text-[14px] font-semibold rounded-[10px] px-4 py-2.5 flex items-center gap-1.5 shadow-sm transition-colors"

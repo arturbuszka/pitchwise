@@ -30,8 +30,17 @@ services:
       HLS_BASE_URL: "http://localhost:8080"
       HLS_SIGNING_SECRET: "${HLS_SIGNING_SECRET:-devsecret}"
       HLS_LINK_TTL_SECONDS: "3600"
+      # Live server URL as seen by the browser (host port 8001 exposed by the worker).
+      # Use 127.0.0.1 not localhost — on Windows/WSL2, localhost resolves to ::1 (IPv6)
+      # which hits wslrelay instead of the Docker port proxy, causing ERR_CONNECTION_RESET.
+      LIVE_WORKER_URL: "http://127.0.0.1:8001"
     volumes:
       - ./storage:/app/storage
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
     depends_on:
       postgres:
         condition: service_healthy
@@ -41,11 +50,24 @@ services:
   worker:
     build:
       context: .
-      dockerfile: worker/Dockerfile
+      dockerfile: worker-dotnet/Dockerfile
+    ports:
+      - "8001:8001"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
     environment:
-      DATABASE_URL: "postgresql+asyncpg://pitchwise:pitchwise@postgres:5432/pitchwise"
+      # .NET worker/live share the API's schema → Npgsql connection string (not asyncpg).
+      DATABASE_CONNECTION: "Host=postgres;Port=5432;Database=pitchwise;Username=pitchwise;Password=pitchwise"
       REDIS_URL: "redis://redis:6379"
       STORAGE_DIR: "/app/storage"
+      # yolo11n baked in; mount + point here for the football model.
+      YOLO_MODEL_PATH: "/app/models/yolo11n.onnx"
+      LIVE_PIPELINE_MODE: "detect"
     volumes:
       - ./storage:/app/storage
     depends_on:
@@ -89,7 +111,8 @@ services:
       # NEXT_PUBLIC_API_URL is intentionally empty (baked at build → relative paths).
       API_INTERNAL_URL: http://api:8000
     depends_on:
-      - api
+      api:
+        condition: service_healthy
 
 volumes:
   pgdata:
