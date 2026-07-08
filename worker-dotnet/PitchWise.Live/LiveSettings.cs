@@ -13,8 +13,8 @@ public sealed class LiveSettings
     public string? YoloNamesPath { get; set; }
     public int LiveImgsz { get; set; } = 640;
 
-    /// <summary>"passthrough" (raw frames) | "detect" (YOLO + overlay). Default passthrough.</summary>
-    public string LivePipelineMode { get; set; } = "passthrough";
+    /// <summary>"passthrough" (raw frames) | "detect" (YOLO + overlay). Default detect.</summary>
+    public string LivePipelineMode { get; set; } = "detect";
 
     /// <summary>Cap encoded width; source wider than this is downscaled.</summary>
     public int MaxWidth { get; set; } = 1280;

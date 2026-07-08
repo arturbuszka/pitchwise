@@ -172,6 +172,12 @@ public sealed class ExternalPreviewSession
         }
     }
 
+    /// <summary>Scales the [0,1] normalized fallback (no calibration yet) up to pitch units
+    /// (105m x 68m) so it lines up with calibrated <see cref="Homography.Project"/> output —
+    /// the frontend always divides pitch_x/pitch_y by the real pitch dimensions.</summary>
+    private static (double x, double y) ScaleNormalizedToPitch((double x, double y) normalized) =>
+        (normalized.x * 105.0, normalized.y * 68.0);
+
     // ------------------------------------------------------------------
     // Main streaming loop
     // ------------------------------------------------------------------
@@ -296,6 +302,15 @@ public sealed class ExternalPreviewSession
             foreach (Detection d in fr.Detections)
                 counts[d.Cls] = counts.GetValueOrDefault(d.Cls) + 1;
             _stats.Record(inferMs, counts);
+
+            var players = fr.Detections.Select(d =>
+            {
+                (double px, double py) = _homography is not null
+                    ? _homography.Project(d.X1, d.Y1, d.X2, d.Y2)
+                    : ScaleNormalizedToPitch(Homography.PixelToNormalized(d.X1, d.Y1, d.X2, d.Y2, w, h));
+                return new { track_id = d.TrackId, cls = d.Cls, pitch_x = px, pitch_y = py };
+            }).ToList();
+            await SendJson(new { type = "positions", players, timestamp = ts });
 
             if (!WriteFrame(ffmpeg, frame)) break;
 

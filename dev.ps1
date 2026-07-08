@@ -28,7 +28,7 @@ Start-Process powershell -ArgumentList "-NoExit", "-Command", "
     # production ball detection (see worker-dotnet/README.md).
     `$env:YOLO_MODEL_PATH='$root\worker-dotnet\vision-onnx\yolo11n.onnx';
     # Live pipeline: 'passthrough' (raw frames) or 'detect' (YOLO overlay). Default safe.
-    `$env:LIVE_PIPELINE_MODE='passthrough';
+    `$env:LIVE_PIPELINE_MODE='detect';
     # Use the winget-installed ffmpeg 8.x (has -hls_flags). Without this, an old
     # ffmpeg earlier on PATH (e.g. Panda3D's 2013 build) breaks live HLS encoding.
     `$ff = Get-ChildItem `"`$env:LOCALAPPDATA\Microsoft\WinGet\Packages`" -Recurse -Filter ffmpeg.exe -ErrorAction SilentlyContinue | Select-Object -First 1;

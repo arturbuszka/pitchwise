@@ -67,7 +67,7 @@ services:
       STORAGE_DIR: "/app/storage"
       # yolo11n baked in; mount + point here for the football model.
       YOLO_MODEL_PATH: "/app/models/yolo11n.onnx"
-      LIVE_PIPELINE_MODE: "passthrough"
+      LIVE_PIPELINE_MODE: "detect"
     volumes:
       - ./storage:/app/storage
     depends_on:
