@@ -1,4 +1,0 @@
-2026-06-23 15:11:09,322 INFO Worker listening on Redis list 'vision_jobs' (redis://localhost:6379)
-2026-06-23 15:11:09,329 INFO Worker listening on Redis list 'highlight_jobs' (redis://localhost:6379)
-2026-06-23 15:11:31,877 INFO Starting highlight 3
-2026-06-23 15:11:59,121 INFO Highlight 3 finished
