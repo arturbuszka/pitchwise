@@ -42,6 +42,34 @@ if (!cap.IsOpened())
     return 2;
 }
 
+// Batch-vs-single check: grab the first few frames, run DetectBatch on all at once and
+// compare against Detect() one-by-one. Confirms the dynamic-batch model + batched pre/post
+// processing produce the SAME detections as single-frame (the core batching invariant).
+if (args.Contains("--batch-check"))
+{
+    var grabbed = new List<Mat>();
+    using (var bc = new VideoCapture(opts.VideoPath))
+        for (int i = 0; i < 6; i++) { var m = new Mat(); if (!bc.Read(m) || m.Empty()) break; grabbed.Add(m); }
+
+    var single = grabbed.Select(m => detector.Detect(m)).ToList();
+    var batched = detector.DetectBatch(grabbed);
+
+    bool ok = true;
+    for (int i = 0; i < grabbed.Count; i++)
+    {
+        if (single[i].Count != batched[i].Count) { ok = false; Console.WriteLine($"  frame {i}: count {single[i].Count} vs {batched[i].Count}"); continue; }
+        for (int k = 0; k < single[i].Count; k++)
+        {
+            var a = single[i][k]; var b = batched[i][k];
+            double d = Math.Abs(a.X1 - b.X1) + Math.Abs(a.Y1 - b.Y1) + Math.Abs(a.X2 - b.X2) + Math.Abs(a.Y2 - b.Y2) + Math.Abs(a.Confidence - b.Confidence);
+            if (a.Cls != b.Cls || d > 1e-2) { ok = false; Console.WriteLine($"  frame {i} det {k}: diff cls={a.Cls}/{b.Cls} d={d:F4}"); }
+        }
+    }
+    foreach (var m in grabbed) m.Dispose();
+    Console.WriteLine($"BATCH-CHECK ({grabbed.Count} frames, batch=1 vs batch=N): {(ok ? "IDENTICAL ✓" : "MISMATCH ✗")}");
+    return ok ? 0 : 1;
+}
+
 int totalMatched = 0, totalGolden = 0, totalExtra = 0;
 bool allPass = true;
 
@@ -131,6 +159,7 @@ static Opts? ParseArgs(string[] args)
             case "--imgsz": o.Imgsz = int.Parse(Next()); break;
             case "--iou-match": o.IouMatch = double.Parse(Next(), System.Globalization.CultureInfo.InvariantCulture); break;
             case "--score-tol": o.ScoreTol = double.Parse(Next(), System.Globalization.CultureInfo.InvariantCulture); break;
+            case "--batch-check": break;   // handled in main, before the golden loop
             default: Console.Error.WriteLine($"Unknown arg {args[i]}"); return null;
         }
     }

@@ -96,12 +96,75 @@ public static class StreamingAnnotator
         }
 
         bool cancelled = false;
-        double lastCancelCheck = -100.0;
+        bool writeFailed = false;
+
+        // Buffer of decoded frames awaiting a batch flush. Each Mat is a CLONE (cap.Read
+        // reuses one Mat), so every entry MUST be disposed after it's written.
+        int batchN = ReadBatchEnv();
+        var pending = new List<(Mat frame, int srcIndex, double ts, bool isStride)>();
+        int pendingStride = 0;
+
+        // Draws boxes on every buffered frame and writes them to ffmpeg IN ORDER; the
+        // stride frames drive detection (batched) + the event window. lastResult carries
+        // across batches so in-between frames keep the previous boxes.
+        void ProcessBatch()
+        {
+            if (pending.Count == 0) return;
+
+            // 1. Batched YOLO + sequential tracking on this batch's stride frames.
+            var strideItems = new List<(Mat, int, double)>(pendingStride);
+            foreach (var p in pending)
+                if (p.isStride) strideItems.Add((p.frame, p.srcIndex, p.ts));
+
+            IReadOnlyList<FrameResult> results = strideItems.Count > 0
+                ? detector.DetectFramesBatched(strideItems)
+                : Array.Empty<FrameResult>();
+
+            // 2. Feed results into the rolling event window in order (same logic as before).
+            foreach (FrameResult fr in results)
+            {
+                window.Add(fr);
+                framesProcessed++;
+                if (fr.TimestampSeconds - windowStart >= windowSeconds)
+                {
+                    FlushWindow();
+                    int keepFrom = window.FindIndex(f => f.TimestampSeconds >= fr.TimestampSeconds - 2.0);
+                    if (keepFrom > 0) window.RemoveRange(0, keepFrom);
+                    windowStart = window.Count > 0 ? window[0].TimestampSeconds : fr.TimestampSeconds;
+                }
+            }
+
+            // 3. Draw + write EVERY buffered frame in srcIndex order; dispose the clones.
+            int resultCursor = 0;
+            foreach (var p in pending)
+            {
+                if (p.isStride) lastResult = results[resultCursor++];
+
+                if (lastResult is not null)
+                    Overlay.Draw(p.frame, lastResult, flags);
+
+                if (!WriteFrame(ffmpeg, p.frame)) { writeFailed = true; }
+
+                if (!firstSegmentSeen && File.Exists(Path.Combine(hlsDir, "index.m3u8")))
+                {
+                    firstSegmentSeen = true;
+                    onFirstSegment?.Invoke();
+                }
+                if (onProgress is not null && duration > 0)
+                    onProgress(Math.Min(0.99, p.ts / duration));
+
+                p.frame.Dispose();
+            }
+            pending.Clear();
+            pendingStride = 0;
+        }
 
         try
         {
             using var frame = new Mat();
             int srcIndex = 0;
+            double lastCancelCheck = -100.0;
+
             while (cap.Read(frame) && !frame.Empty())
             {
                 double ts = srcIndex / fps;
@@ -113,48 +176,25 @@ public static class StreamingAnnotator
                     if (isCancelled()) { cancelled = true; break; }
                 }
 
-                // Detect on stride-frames; reuse the last result on in-between frames so every
-                // emitted frame carries boxes.
-                if (srcIndex % stride == 0)
-                {
-                    lastResult = detector.DetectFrame(frame, srcIndex, ts);
-                    window.Add(lastResult);
-                    framesProcessed++;
+                bool isStride = srcIndex % stride == 0;
+                pending.Add((frame.Clone(), srcIndex, ts, isStride));   // clone: cap.Read reuses `frame`
+                if (isStride) pendingStride++;
 
-                    // Window boundary: analyse & emit, then keep a short overlap tail.
-                    if (ts - windowStart >= windowSeconds)
-                    {
-                        FlushWindow();
-                        // keep last ~2s of frames as overlap context for the next window
-                        int keepFrom = window.FindIndex(f => f.TimestampSeconds >= ts - 2.0);
-                        if (keepFrom > 0) window.RemoveRange(0, keepFrom);
-                        windowStart = window.Count > 0 ? window[0].TimestampSeconds : ts;
-                    }
-                }
-
-                if (lastResult is not null)
-                    Overlay.Draw(frame, lastResult, flags);
-
-                if (!WriteFrame(ffmpeg, frame)) break;
-
-                if (!firstSegmentSeen && File.Exists(Path.Combine(hlsDir, "index.m3u8")))
-                {
-                    firstSegmentSeen = true;
-                    onFirstSegment?.Invoke();
-                }
-
-                if (onProgress is not null && duration > 0)
-                    onProgress(Math.Min(0.99, ts / duration));
+                if (pendingStride >= batchN) ProcessBatch();
+                if (writeFailed) break;
 
                 srcIndex++;
             }
 
+            // Flush the tail unless we're bailing out.
+            if (!cancelled && !writeFailed) ProcessBatch();
+
             // Final (partial) window — skip if cancelled (no point emitting stale events).
-            if (!cancelled) FlushWindow();
+            if (!cancelled && !writeFailed) FlushWindow();
 
             ffmpeg.StandardInput.Close();
             ffmpeg.WaitForExit();
-            if (!cancelled) onProgress?.Invoke(1.0);
+            if (!cancelled && !writeFailed) onProgress?.Invoke(1.0);
 
             return new Result
             {
@@ -167,9 +207,21 @@ public static class StreamingAnnotator
         }
         finally
         {
+            // Dispose any buffered clones not yet written (cancel / write error / exception).
+            foreach (var p in pending) { try { p.frame.Dispose(); } catch { } }
+            pending.Clear();
             try { if (!ffmpeg.HasExited) ffmpeg.Kill(); } catch { /* best effort */ }
             ffmpeg.Dispose();
         }
+    }
+
+    // Batch size for GPU inference, from ONNX_BATCH (default 8, clamped [1..32]).
+    // ONNX_BATCH=1 restores the original one-frame-at-a-time behaviour (kill-switch).
+    private static int ReadBatchEnv()
+    {
+        if (int.TryParse(Environment.GetEnvironmentVariable("ONNX_BATCH"), out int n))
+            return Math.Clamp(n, 1, 32);
+        return 8;
     }
 
     private static bool WriteFrame(System.Diagnostics.Process ffmpeg, Mat frame)

@@ -77,10 +77,34 @@ public sealed class Detector : IDisposable
     }
 
     /// <summary>Detect + track on a single BGR frame.</summary>
-    public FrameResult DetectFrame(Mat frame, int frameIndex, double timestampSeconds)
-    {
-        IReadOnlyList<Detection> classed = _detector.Detect(frame);
+    public FrameResult DetectFrame(Mat frame, int frameIndex, double timestampSeconds) =>
+        TrackAndAttach(_detector.Detect(frame), frameIndex, timestampSeconds);
 
+    /// <summary>
+    /// Detect on N frames in ONE batched YOLO inference, then run the (stateful, sequential)
+    /// tracker frame-by-frame IN ORDER. The batch only groups the expensive YOLO calls; the
+    /// tracker sees exactly the same per-frame sequence as N single DetectFrame calls, so
+    /// track ids are identical. Frames MUST be passed in ascending frameIndex order.
+    /// </summary>
+    public IReadOnlyList<FrameResult> DetectFramesBatched(
+        IReadOnlyList<(Mat frame, int frameIndex, double timestampSeconds)> batch)
+    {
+        if (batch.Count == 0) return Array.Empty<FrameResult>();
+
+        var mats = new List<Mat>(batch.Count);
+        foreach (var b in batch) mats.Add(b.frame);
+        IReadOnlyList<IReadOnlyList<Detection>> perFrame = _detector.DetectBatch(mats);
+
+        var results = new List<FrameResult>(batch.Count);
+        for (int k = 0; k < batch.Count; k++)
+            results.Add(TrackAndAttach(perFrame[k], batch[k].frameIndex, batch[k].timestampSeconds));
+        return results;
+    }
+
+    /// <summary>Runs the tracker on one frame's detections and re-attaches track ids by IoU.
+    /// Stateful — must be called once per processed frame in ascending order.</summary>
+    private FrameResult TrackAndAttach(IReadOnlyList<Detection> classed, int frameIndex, double timestampSeconds)
+    {
         // Feed boxes+scores to the tracker; it returns boxes+ids (no class).
         var btDets = new List<BT.Detection>(classed.Count);
         foreach (Detection d in classed)

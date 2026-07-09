@@ -52,7 +52,9 @@ def main() -> int:
         format="onnx",
         imgsz=args.imgsz,
         opset=12,
-        dynamic=False,
+        # dynamic batch axis so the .NET detector can run N frames in one inference
+        # (GPU batching). Batch=1 still works, so live + parity are unaffected.
+        dynamic=True,
         simplify=True,
         nms=False,
     )

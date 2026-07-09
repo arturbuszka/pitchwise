@@ -105,24 +105,48 @@ public sealed class Yolo11OnnxDetector : IDisposable
         catch { /* logging must never break inference */ }
     }
 
-    /// <summary>Runs detection on one BGR frame. Boxes are in original-image coords.</summary>
-    public IReadOnlyList<Detection> Detect(Mat frameBgr)
+    /// <summary>Runs detection on one BGR frame. Boxes are in original-image coords.
+    /// Thin wrapper over <see cref="DetectBatch"/> so single-frame (live) and batched
+    /// (analysis) paths share ONE code path — automatic parity, one thing to maintain.</summary>
+    public IReadOnlyList<Detection> Detect(Mat frameBgr) => DetectBatch(new[] { frameBgr })[0];
+
+    /// <summary>
+    /// Runs detection on N frames in a single ONNX inference. Requires a model exported
+    /// with a dynamic batch axis for N>1 (a fixed-batch model only accepts N==1). Returns
+    /// per-frame detections in input order. Boxes are in each frame's original-image coords.
+    /// </summary>
+    public IReadOnlyList<IReadOnlyList<Detection>> DetectBatch(IReadOnlyList<Mat> framesBgr)
     {
-        LetterboxInfo lb = Letterbox(frameBgr, _imgsz);
+        int n = framesBgr.Count;
+        if (n == 0) return Array.Empty<IReadOnlyList<Detection>>();
+
+        var lbs = new LetterboxInfo[n];
         try
         {
-            DenseTensor<float> input = Preprocess(lb.Padded);
+            // Letterbox every frame and pack into one [N,3,imgsz,imgsz] tensor.
+            var tensor = new DenseTensor<float>(new[] { n, 3, _imgsz, _imgsz });
+            for (int i = 0; i < n; i++)
+            {
+                lbs[i] = Letterbox(framesBgr[i], _imgsz);
+                WriteChw(lbs[i].Padded, tensor, i);
+            }
+
             var inputs = new List<NamedOnnxValue>
             {
-                NamedOnnxValue.CreateFromTensor(_inputName, input),
+                NamedOnnxValue.CreateFromTensor(_inputName, tensor),
             };
             using IDisposableReadOnlyCollection<DisposableNamedOnnxValue> results = _session.Run(inputs);
-            Tensor<float> output = results.First().AsTensor<float>();
-            return Postprocess(output, lb);
+            Tensor<float> output = results.First().AsTensor<float>();  // [N, 4+numClasses, numAnchors]
+
+            var perFrame = new List<IReadOnlyList<Detection>>(n);
+            for (int i = 0; i < n; i++)
+                perFrame.Add(PostprocessOne(output, i, lbs[i]));
+            return perFrame;
         }
         finally
         {
-            lb.Padded.Dispose();
+            for (int i = 0; i < n; i++)
+                lbs[i].Padded?.Dispose();
         }
     }
 
@@ -155,36 +179,41 @@ public sealed class Yolo11OnnxDetector : IDisposable
         return new LetterboxInfo(canvas, ratio, left, top);
     }
 
-    /// <summary>BGR Mat → CHW float tensor: BGR→RGB, /255. No mean/std (YOLO11).</summary>
-    private DenseTensor<float> Preprocess(Mat padded)
+    /// <summary>
+    /// Writes one letterboxed BGR frame into slot <paramref name="n"/> of a batched CHW
+    /// tensor [N,3,H,W]: BGR→RGB, /255. Writes straight into the tensor's contiguous
+    /// backing buffer via <see cref="Span{T}"/> with precomputed plane offsets — one linear
+    /// pass, no multi-dimensional indexer, no per-element bounds-check. This is the hot path
+    /// (called once per processed frame); the old per-pixel indexer version starved the GPU.
+    /// </summary>
+    private static void WriteChw(Mat padded, DenseTensor<float> tensor, int n)
     {
-        int h = padded.Height;
-        int w = padded.Width;
-        var tensor = new DenseTensor<float>(new[] { 1, 3, h, w });
+        int h = padded.Height, w = padded.Width;
+        int plane = h * w;
 
-        Vec3b[] pixels = new Vec3b[h * w];
-        padded.GetArray(out pixels);
+        // Pull pixels once (single managed copy) instead of indexing the Mat per element.
+        padded.GetArray(out Vec3b[] px);
 
-        for (int y = 0; y < h; y++)
+        Span<float> dst = tensor.Buffer.Span;
+        int rBase = (n * 3 + 0) * plane;   // R plane
+        int gBase = (n * 3 + 1) * plane;   // G plane
+        int bBase = (n * 3 + 2) * plane;   // B plane
+        const float inv255 = 1f / 255f;
+
+        for (int i = 0; i < plane; i++)
         {
-            int rowOffset = y * w;
-            for (int x = 0; x < w; x++)
-            {
-                Vec3b p = pixels[rowOffset + x];
-                // p.Item0=B, p.Item1=G, p.Item2=R; model expects RGB.
-                tensor[0, 0, y, x] = p.Item2 / 255f;
-                tensor[0, 1, y, x] = p.Item1 / 255f;
-                tensor[0, 2, y, x] = p.Item0 / 255f;
-            }
+            Vec3b p = px[i];               // Item0=B, Item1=G, Item2=R
+            dst[rBase + i] = p.Item2 * inv255;
+            dst[gBase + i] = p.Item1 * inv255;
+            dst[bBase + i] = p.Item0 * inv255;
         }
-        return tensor;
     }
 
     /// <summary>
     /// Decodes YOLO11 output <c>[1, 4+numClasses, numAnchors]</c> (transposed, no
     /// objectness) into original-image boxes, applies score threshold + per-class NMS.
     /// </summary>
-    private IReadOnlyList<Detection> Postprocess(Tensor<float> output, LetterboxInfo lb)
+    private IReadOnlyList<Detection> PostprocessOne(Tensor<float> output, int n, LetterboxInfo lb)
     {
         double ratio = lb.Ratio;
         int channels = output.Dimensions[1];       // 4 + numClasses
@@ -200,7 +229,7 @@ public sealed class Yolo11OnnxDetector : IDisposable
             float bestScore = 0f;
             for (int c = 0; c < numClasses; c++)
             {
-                float s = output[0, 4 + c, i];
+                float s = output[n, 4 + c, i];
                 if (s > bestScore)
                 {
                     bestScore = s;
@@ -211,10 +240,10 @@ public sealed class Yolo11OnnxDetector : IDisposable
             if (bestScore < _scoreThresh) continue;
 
             // Boxes are cx,cy,w,h in net-input pixel space — no grid/stride/exp decode.
-            double cx = output[0, 0, i];
-            double cy = output[0, 1, i];
-            double bw = output[0, 2, i];
-            double bh = output[0, 3, i];
+            double cx = output[n, 0, i];
+            double cy = output[n, 1, i];
+            double bw = output[n, 2, i];
+            double bh = output[n, 3, i];
 
             // center→corner in net space, subtract the centered pad, then divide by
             // ratio to map back to the original image.

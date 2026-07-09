@@ -45,6 +45,8 @@ Start-Process powershell -ArgumentList "-NoExit", "-Command", "
         `$env:YOLO_MODEL_PATH=`$model; if (`$ffmpeg) { `$env:FFMPEG_PATH=`$ffmpeg };
         # DirectML GPU for the batch worker (falls back to CPU automatically).
         `$env:ONNX_EP='dml';
+        # Frames per GPU inference (analysis path). 1 = old one-at-a-time behaviour.
+        `$env:ONNX_BATCH='8';
         dotnet run --project PitchWise.Worker -c Release
     } -ArgumentList (Get-Location).Path, `$env:DATABASE_CONNECTION, `$env:REDIS_URL, `$env:STORAGE_DIR, `$env:YOLO_MODEL_PATH, `$env:FFMPEG_PATH | Out-Null;
     dotnet run --project PitchWise.Live -c Release
