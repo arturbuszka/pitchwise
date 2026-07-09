@@ -36,6 +36,8 @@ public record AnalysisDetail(
     DateTime UpdatedAt,
     List<VideoOut> Videos);
 
+// One video → one analysis job. AnnotatedReady flags that the boxes-burned-in playback
+// file has been rendered (until then the player shows a placeholder).
 public record VisionJobOut(
     int Id,
     int VideoId,
@@ -43,7 +45,8 @@ public record VisionJobOut(
     double Progress,
     string? Error,
     DateTime CreatedAt,
-    DateTime? FinishedAt);
+    DateTime? FinishedAt,
+    bool AnnotatedReady = false);
 
 public record ClipOut(
     int Id,

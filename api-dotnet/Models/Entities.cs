@@ -24,6 +24,10 @@ public class Video
     public double? DurationSeconds { get; set; }
     public double? Fps { get; set; }
     public int Order { get; set; }
+    // Annotated (boxes burned-in) MP4, stitched from all segment renders. Null until
+    // every segment of this video has finished rendering. Served for playback with
+    // full rewind (HTTP Range); the raw upload is the fallback.
+    public string? AnnotatedFilename { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }
 

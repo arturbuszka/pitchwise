@@ -84,6 +84,8 @@ export interface VisionJob {
   error: string | null;
   created_at: string;
   finished_at: string | null;
+  // Whether the annotated (boxes burned-in) playback file has been rendered.
+  annotated_ready: boolean;
 }
 
 export interface EventTypeConfig {
@@ -218,11 +220,20 @@ export const api = {
         }),
       streamUrl: (analysisId: number, videoId: number) =>
         `${API}/api/analyses/${analysisId}/videos/${videoId}/stream`,
+      // Annotated (boxes burned-in) playback — progressive HLS VOD. Watchable within
+      // seconds of starting analysis; only valid once status.annotated_ready.
+      annotatedHlsUrl: (analysisId: number, videoId: number) =>
+        `${API}/api/analyses/${analysisId}/videos/${videoId}/annotated/index.m3u8`,
       analyze: (analysisId: number, videoId: number): Promise<VisionJob> =>
         fetch(`${API}/api/analyses/${analysisId}/videos/${videoId}/analyze`, { method: "POST" }).then((r) => r.json()),
       status: (analysisId: number, videoId: number): Promise<VisionJob | null> =>
-        fetch(`${API}/api/analyses/${analysisId}/videos/${videoId}/status`, { cache: "no-store" }).then((r) =>
-          r.ok ? r.json() : null
+        // Body may be an empty 200 (never analysed) — guard r.json() against empty input.
+        fetch(`${API}/api/analyses/${analysisId}/videos/${videoId}/status`, { cache: "no-store" }).then(
+          async (r) => {
+            if (!r.ok) return null;
+            const text = await r.text();
+            return text ? (JSON.parse(text) as VisionJob) : null;
+          }
         ),
     },
 

@@ -90,6 +90,11 @@ using (var scope = app.Services.CreateScope())
             stopped_at TIMESTAMPTZ NULL
         )
     """);
+    // Annotated (boxes burned-in) playback: added after initial deployment, so ALTER the
+    // existing table (EnsureCreated only builds brand-new DBs). See
+    // Migrations/003_annotated_video.sql.
+    db.Database.ExecuteSqlRaw(
+        "ALTER TABLE video ADD COLUMN IF NOT EXISTS annotated_filename TEXT NULL;");
 }
 
 app.UseCors();

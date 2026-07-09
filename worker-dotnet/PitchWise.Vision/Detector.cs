@@ -114,7 +114,11 @@ public sealed class Detector : IDisposable
 
     /// <summary>Iterates frames (every frame_stride) yielding detections with track ids.
     /// Port of Detector.run(). fps is read from the video for timestamps.</summary>
-    public IEnumerable<FrameResult> Run(string videoPath)
+    /// <param name="startSeconds">Skip decoding up to this timestamp (segment start). 0 = beginning.</param>
+    /// <param name="endSeconds">Stop after this timestamp (segment end). null = end of file.</param>
+    /// <remarks>Timestamps stay ABSOLUTE relative to the whole video (frameIndex/fps),
+    /// so events from a mid-video segment carry their true match time.</remarks>
+    public IEnumerable<FrameResult> Run(string videoPath, double startSeconds = 0.0, double? endSeconds = null)
     {
         using var cap = new VideoCapture(videoPath);
         if (!cap.IsOpened())
@@ -123,17 +127,26 @@ public sealed class Detector : IDisposable
         double fps = cap.Get(VideoCaptureProperties.Fps);
         if (fps <= 0 || double.IsNaN(fps)) fps = 25.0;
 
+        // Seek to the segment start. Snap to a stride boundary so frameIndex%stride==0
+        // stays true and track ids/timestamps line up with a from-zero run.
+        int startFrame = 0;
+        if (startSeconds > 0)
+        {
+            startFrame = (int)Math.Floor(startSeconds * fps);
+            startFrame -= startFrame % _frameStride;
+            cap.Set(VideoCaptureProperties.PosFrames, startFrame);
+        }
+        int? endFrame = endSeconds is double e ? (int)Math.Ceiling(e * fps) : null;
+
         using var frame = new Mat();
-        int i = 0;              // stride-step counter
-        int srcIndex = 0;       // absolute source frame index
+        int srcIndex = startFrame;   // absolute source frame index
         while (cap.Read(frame) && !frame.Empty())
         {
+            if (endFrame is int ef && srcIndex >= ef) break;
             if (srcIndex % _frameStride == 0)
             {
-                int frameIndex = i * _frameStride;
-                double ts = frameIndex / fps;
-                yield return DetectFrame(frame, frameIndex, ts);
-                i++;
+                double ts = srcIndex / fps;
+                yield return DetectFrame(frame, srcIndex, ts);
             }
             srcIndex++;
         }

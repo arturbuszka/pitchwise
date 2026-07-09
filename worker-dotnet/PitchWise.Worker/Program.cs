@@ -27,6 +27,8 @@ if (int.TryParse(Environment.GetEnvironmentVariable("FRAME_STRIDE"), out int fs)
 if (int.TryParse(Environment.GetEnvironmentVariable("LIVE_IMGSZ"), out int isz)) worker.Imgsz = isz;
 worker.GenerateClips = (Environment.GetEnvironmentVariable("GENERATE_CLIPS") ?? "") is "1" or "true"
     ? true : worker.GenerateClips;
+if ((Environment.GetEnvironmentVariable("RENDER_ANNOTATED") ?? "") is "0" or "false")
+    worker.RenderAnnotated = false;
 worker.FfmpegPath = Environment.GetEnvironmentVariable("FFMPEG_PATH") ?? worker.FfmpegPath;
 builder.Services.AddSingleton(worker);
 

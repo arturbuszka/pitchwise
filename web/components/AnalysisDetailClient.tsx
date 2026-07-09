@@ -18,6 +18,7 @@ import { Chat } from "./Chat";
 import { QuickActions } from "./QuickActions";
 import { EventResultsPanel } from "./EventResultsPanel";
 import { HlsPlayer } from "./HlsPlayer";
+import { AnnotatedHlsPlayer } from "./AnnotatedHlsPlayer";
 
 const SPORT_LABELS: Record<string, string> = {
   football: "⚽ Football",
@@ -57,6 +58,9 @@ export function AnalysisDetailClient({
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const activeVideo = videos.find((v) => v.id === activeVideoId) ?? null;
+  // Annotated playback is available only for the video the current job belongs to.
+  const annotatedReady =
+    !!job && job.video_id === activeVideoId && job.annotated_ready;
 
   function seekVideo(seconds: number) {
     if (videoRef.current) {
@@ -118,7 +122,25 @@ export function AnalysisDetailClient({
     if (fresh) setEvents(fresh);
   }
 
-  // Poll the status of the active job
+  // Hydrate job status when the active video changes (e.g. on reload) so a previously
+  // analysed video shows its annotated playback and segment progress without a re-run.
+  useEffect(() => {
+    if (activeVideoId == null) {
+      setJob(null);
+      return;
+    }
+    let cancelled = false;
+    api.analyses.videos.status(analysis.id, activeVideoId).then((s) => {
+      if (!cancelled) setJob(s);
+    });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeVideoId, analysis.id]);
+
+  // Poll the status of the active job. With segmented analysis we refresh the events
+  // timeline on every tick so it fills in per segment instead of only at the end.
   useEffect(() => {
     if (!job || job.status === "done" || job.status === "failed") return;
     const interval = setInterval(async () => {
@@ -127,9 +149,10 @@ export function AnalysisDetailClient({
         .status(analysis.id, activeVideoId)
         .catch(() => null);
       if (updated) setJob(updated);
+      // A finished segment means new events are queryable — pull them in live.
+      await refreshEvents();
       if (updated?.status === "done") {
         clearInterval(interval);
-        await refreshEvents();
         router.refresh();
       } else if (updated?.status === "failed") {
         clearInterval(interval);
@@ -347,6 +370,7 @@ export function AnalysisDetailClient({
                 {job.status === "running" && job.progress > 0
                   ? ` ${Math.round(job.progress * 100)}%`
                   : ""}
+                {annotatedReady ? " · ▦ boxes" : ""}
               </span>
             )}
             <button
@@ -371,17 +395,30 @@ export function AnalysisDetailClient({
           {/* Player */}
           <div className="p-5">
             <div className="relative rounded-xl overflow-hidden bg-[#1a3d2e] shadow-sm">
-              {activeVideoId != null ? (
-                <video
-                  ref={videoRef}
-                  key={activeVideoId}
-                  src={api.analyses.videos.streamUrl(analysis.id, activeVideoId)}
+              {activeVideoId == null ? (
+                <div className="w-full h-64 flex items-center justify-center text-[#9aa0a8] text-sm">
+                  Attach a video to get started
+                </div>
+              ) : annotatedReady ? (
+                // Only ever show the annotated (boxes burned-in) video — a progressive HLS
+                // playlist that grows as analysis runs. Until it exists, a placeholder.
+                <AnnotatedHlsPlayer
+                  key={`${activeVideoId}-annotated`}
+                  videoRef={videoRef}
+                  hlsUrl={api.analyses.videos.annotatedHlsUrl(analysis.id, activeVideoId)}
                   controls
                   className="w-full max-h-[420px] object-contain bg-black"
                 />
               ) : (
-                <div className="w-full h-64 flex items-center justify-center text-[#9aa0a8] text-sm">
-                  Attach a video to get started
+                <div className="w-full aspect-video flex flex-col items-center justify-center gap-2 text-[#9aa0a8] text-sm">
+                  <span className="text-3xl">🎬</span>
+                  <span>
+                    {job?.status === "running" || job?.status === "pending"
+                      ? "Analyzing… detections will appear here"
+                      : job?.status === "failed"
+                        ? "Analysis failed"
+                        : "Run analysis to see detections"}
+                  </span>
                 </div>
               )}
             </div>

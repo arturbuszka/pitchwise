@@ -19,6 +19,10 @@ public sealed class WorkerSettings
     /// <summary>Process every Nth frame (matches Python FRAME_STRIDE).</summary>
     public int FrameStride { get; set; } = 3;
 
+    /// <summary>Burn detection boxes into a persistent annotated MP4 per segment and
+    /// stitch them when the video finishes. Off => behaves like plain analysis.</summary>
+    public bool RenderAnnotated { get; set; } = true;
+
     /// <summary>Per-event clip extraction (Python GENERATE_CLIPS). Off by default.</summary>
     public bool GenerateClips { get; set; }
     public double ClipPreSeconds { get; set; } = 6.0;

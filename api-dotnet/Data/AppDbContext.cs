@@ -61,6 +61,7 @@ public class AppDbContext : DbContext
             e.Property(x => x.DurationSeconds).HasColumnName("duration_seconds");
             e.Property(x => x.Fps).HasColumnName("fps");
             e.Property(x => x.Order).HasColumnName("order");
+            e.Property(x => x.AnnotatedFilename).HasColumnName("annotated_filename");
             e.Property(x => x.CreatedAt).HasColumnName("created_at");
             e.HasIndex(x => x.AnalysisId);
         });

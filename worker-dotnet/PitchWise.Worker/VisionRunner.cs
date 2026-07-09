@@ -64,25 +64,42 @@ public sealed class VisionRunner
 
         try
         {
-            // 2. Run the CPU-bound pipeline off the async path, throttling progress writes.
+            // 2. Single streaming pass: encode a growing HLS VOD with boxes AND detect
+            // events in rolling windows. Boxes appear within seconds; the timeline fills
+            // in as windows complete; nothing waits for the whole file.
             double lastSaved = 0.0;
-            void OnProgress(double p)
+            void SaveProgress(double p)
             {
                 if (p - lastSaved < 0.02 && p < 1.0) return;
                 lastSaved = p;
-                // fire-and-forget short write; failures here must not kill the job.
-                _ = SaveProgressAsync(jobId, p);
+                _ = SaveProgressAsync(jobId, p);   // fire-and-forget short write
             }
 
-            PipelineResult result = await Task.Run(() => Pipeline.AnalyzeVideo(
-                videoPath,
-                _worker.YoloModelPath,
-                _classNames,
-                frameStride: _worker.FrameStride,
-                imgsz: _worker.Imgsz,
-                onProgress: OnProgress), ct);
+            // HLS lives in a per-video dir under uploads; annotated_filename stores the dir.
+            string hlsDirName = $"annotated_v{videoId}";
+            string hlsDir = Path.Combine(_appSettings.UploadsDir, hlsDirName);
+            if (Directory.Exists(hlsDir))
+                try { Directory.Delete(hlsDir, recursive: true); } catch { /* re-analysis: wipe old */ }
 
-            // 3. Persist results in one scope.
+            int readyFlagged = 0;
+            void OnFirstSegment()
+            {
+                // Flag playback-ready the moment the first segment lands (once).
+                if (Interlocked.Exchange(ref readyFlagged, 1) == 0)
+                    _ = SetAnnotatedDirAsync(videoId, hlsDirName);
+            }
+            void OnEvents(IReadOnlyList<DetectedEvent> evs) =>
+                _ = SaveEventsAsync(videoId, evs, videoPath);   // fire-and-forget per window
+
+            StreamingAnnotator.Result result = await Task.Run(() => StreamingAnnotator.Run(
+                videoPath, hlsDir,
+                _worker.YoloModelPath, _classNames,
+                frameStride: _worker.FrameStride, imgsz: _worker.Imgsz,
+                onProgress: SaveProgress,
+                onFirstSegment: _worker.RenderAnnotated ? OnFirstSegment : null,
+                onEvents: OnEvents), ct);
+
+            // 3. Finalise in one scope: duration/fps, ensure annotated dir set, mark done.
             using IServiceScope scope = _scopeFactory.CreateScope();
             AppDbContext db = NewDb(scope);
 
@@ -92,54 +109,22 @@ public sealed class VisionRunner
 
             video.DurationSeconds = result.DurationSeconds;
             video.Fps = result.Fps;
-
-            foreach (DetectedEvent det in result.Events)
-            {
-                var ev = new Event
-                {
-                    AnalysisId = video.AnalysisId,
-                    VideoId = video.Id,
-                    Type = EventTypeMap.FromDb(det.Type),
-                    Source = EventSource.Auto,
-                    TimestampSeconds = det.TimestampSeconds,
-                    Confidence = det.Confidence,
-                    Label = det.Label,
-                };
-                db.Events.Add(ev);
-                await db.SaveChangesAsync(ct);   // flush to get ev.Id (mirrors Python flush)
-
-                if (_worker.GenerateClips)
-                {
-                    double start = Math.Max(0.0, det.TimestampSeconds - _worker.ClipPreSeconds);
-                    double end = det.TimestampSeconds + _worker.ClipPostSeconds;
-                    string clipName = $"video{video.Id}_event{ev.Id}.mp4";
-                    string clipPath = Path.Combine(_appSettings.ClipsDir, clipName);
-                    if (FfmpegTools.ExtractClip(videoPath, clipPath, start, end))
-                    {
-                        db.Clips.Add(new Clip
-                        {
-                            EventId = ev.Id,
-                            VideoId = video.Id,
-                            Filename = clipName,
-                            StartSeconds = start,
-                            EndSeconds = end,
-                        });
-                    }
-                }
-            }
+            if (_worker.RenderAnnotated && result.EncodeOk)
+                video.AnnotatedFilename = hlsDirName;
 
             job.Status = VisionJobStatus.Done;
             job.Progress = 1.0;
             job.FinishedAt = DateTime.UtcNow;
 
-            // 4. Flip the session to "done" when every job in it is finished.
-            var siblingJobs = await db.VisionJobs
-                .Join(db.Videos, j => j.VideoId, v => v.Id, (j, v) => new { j, v.AnalysisId })
-                .Where(x => x.AnalysisId == video.AnalysisId && x.j.Id != jobId)
-                .Select(x => x.j.Status)
+            // 4. Flip the session to "done" when every job across the analysis is finished.
+            var siblingStatuses = await db.VisionJobs
+                .Join(db.Videos, j => j.VideoId, v => v.Id, (j, v) => new { j.Status, v.AnalysisId })
+                .Where(x => x.AnalysisId == video.AnalysisId && x.Status != VisionJobStatus.Done)
+                .Select(x => x.Status)
                 .ToListAsync(ct);
-            bool allDone = siblingJobs.All(s => s == VisionJobStatus.Done);
-            if (allDone)
+            // The current job isn't Done in the DB yet (saved below), so exclude it: if no
+            // OTHER job is unfinished, this is the last one.
+            if (siblingStatuses.Count == 0)
             {
                 AnalysisSession? session = await db.AnalysisSessions
                     .FirstOrDefaultAsync(s => s.Id == video.AnalysisId, ct);
@@ -165,6 +150,72 @@ public sealed class VisionRunner
                 await db.SaveChangesAsync(ct);
             }
         }
+    }
+
+    // Set the annotated HLS dir as soon as the first segment lands, so the frontend can
+    // start playing while analysis continues. Best-effort short write.
+    private async Task SetAnnotatedDirAsync(int videoId, string hlsDirName)
+    {
+        try
+        {
+            using IServiceScope scope = _scopeFactory.CreateScope();
+            AppDbContext db = NewDb(scope);
+            Video? video = await db.Videos.FirstOrDefaultAsync(v => v.Id == videoId);
+            if (video is not null && video.AnnotatedFilename != hlsDirName)
+            {
+                video.AnnotatedFilename = hlsDirName;
+                await db.SaveChangesAsync();
+            }
+        }
+        catch { /* best-effort; finalise step also sets it */ }
+    }
+
+    // Persist a window's worth of freshly detected events so the timeline fills in live.
+    private async Task SaveEventsAsync(int videoId, IReadOnlyList<DetectedEvent> events, string videoPath)
+    {
+        if (events.Count == 0) return;
+        try
+        {
+            using IServiceScope scope = _scopeFactory.CreateScope();
+            AppDbContext db = NewDb(scope);
+            Video? video = await db.Videos.FirstOrDefaultAsync(v => v.Id == videoId);
+            if (video is null) return;
+
+            foreach (DetectedEvent det in events)
+            {
+                var ev = new Event
+                {
+                    AnalysisId = video.AnalysisId,
+                    VideoId = video.Id,
+                    Type = EventTypeMap.FromDb(det.Type),
+                    Source = EventSource.Auto,
+                    TimestampSeconds = det.TimestampSeconds,
+                    Confidence = det.Confidence,
+                    Label = det.Label,
+                };
+                db.Events.Add(ev);
+                await db.SaveChangesAsync();   // flush to get ev.Id
+
+                if (_worker.GenerateClips)
+                {
+                    double start = Math.Max(0.0, det.TimestampSeconds - _worker.ClipPreSeconds);
+                    double end = det.TimestampSeconds + _worker.ClipPostSeconds;
+                    string clipName = $"video{video.Id}_event{ev.Id}.mp4";
+                    string clipPath = Path.Combine(_appSettings.ClipsDir, clipName);
+                    if (FfmpegTools.ExtractClip(videoPath, clipPath, start, end))
+                        db.Clips.Add(new Clip
+                        {
+                            EventId = ev.Id,
+                            VideoId = video.Id,
+                            Filename = clipName,
+                            StartSeconds = start,
+                            EndSeconds = end,
+                        });
+                }
+            }
+            await db.SaveChangesAsync();
+        }
+        catch { /* best-effort; a dropped window just means a few missing events */ }
     }
 
     private async Task SaveProgressAsync(int jobId, double progress)
