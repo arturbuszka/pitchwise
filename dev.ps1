@@ -30,6 +30,9 @@ Start-Process powershell -ArgumentList "-NoExit", "-Command", "
     `$env:YOLO_MODEL_PATH='$root\worker-dotnet\vision-onnx\football.onnx';
     # Live pipeline: 'passthrough' (raw frames) or 'detect' (YOLO overlay). Default safe.
     `$env:LIVE_PIPELINE_MODE='detect';
+    # ONNX execution provider: 'dml' (DirectML GPU, any DX12 card, no CUDA needed) or 'cpu'.
+    # Auto-falls back to CPU if DirectML can't initialise. Applies to live (this scope).
+    `$env:ONNX_EP='dml';
     # Use the winget-installed ffmpeg 8.x (has -hls_flags). Without this, an old
     # ffmpeg earlier on PATH (e.g. Panda3D's 2013 build) breaks live HLS encoding.
     `$ff = Get-ChildItem `"`$env:LOCALAPPDATA\Microsoft\WinGet\Packages`" -Recurse -Filter ffmpeg.exe -ErrorAction SilentlyContinue | Select-Object -First 1;
@@ -40,6 +43,8 @@ Start-Process powershell -ArgumentList "-NoExit", "-Command", "
         Set-Location `$dir;
         `$env:DATABASE_CONNECTION=`$db; `$env:REDIS_URL=`$redis; `$env:STORAGE_DIR=`$storage;
         `$env:YOLO_MODEL_PATH=`$model; if (`$ffmpeg) { `$env:FFMPEG_PATH=`$ffmpeg };
+        # DirectML GPU for the batch worker (falls back to CPU automatically).
+        `$env:ONNX_EP='dml';
         dotnet run --project PitchWise.Worker -c Release
     } -ArgumentList (Get-Location).Path, `$env:DATABASE_CONNECTION, `$env:REDIS_URL, `$env:STORAGE_DIR, `$env:YOLO_MODEL_PATH, `$env:FFMPEG_PATH | Out-Null;
     dotnet run --project PitchWise.Live -c Release

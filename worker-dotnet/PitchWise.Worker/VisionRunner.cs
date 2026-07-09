@@ -91,13 +91,21 @@ public sealed class VisionRunner
             void OnEvents(IReadOnlyList<DetectedEvent> evs) =>
                 _ = SaveEventsAsync(videoId, evs, videoPath);   // fire-and-forget per window
 
+            // Cooperative cancel: the API sets the job to Failed/cancelled; the worker (a
+            // separate process) notices via this DB poll and stops. Cached to keep the poll
+            // off the hot path (checked at most ~every 2s inside StreamingAnnotator).
+            bool IsCancelled() => IsJobCancelledSync(jobId);
+
             StreamingAnnotator.Result result = await Task.Run(() => StreamingAnnotator.Run(
                 videoPath, hlsDir,
                 _worker.YoloModelPath, _classNames,
                 frameStride: _worker.FrameStride, imgsz: _worker.Imgsz,
                 onProgress: SaveProgress,
                 onFirstSegment: _worker.RenderAnnotated ? OnFirstSegment : null,
-                onEvents: OnEvents), ct);
+                onEvents: OnEvents,
+                executionProvider: _worker.OnnxExecutionProvider,
+                deviceId: _worker.OnnxDeviceId,
+                isCancelled: IsCancelled), ct);
 
             // 3. Finalise in one scope: duration/fps, ensure annotated dir set, mark done.
             using IServiceScope scope = _scopeFactory.CreateScope();
@@ -106,6 +114,16 @@ public sealed class VisionRunner
             Video? video = await db.Videos.FirstOrDefaultAsync(v => v.Id == videoId, ct);
             VisionJob? job = await db.VisionJobs.FirstOrDefaultAsync(j => j.Id == jobId, ct);
             if (video is null || job is null) return;
+
+            // Cancelled: the API already marked the job (Failed/cancelled). Leave its status,
+            // just clean up the partial annotated dir and stop.
+            if (result.Cancelled)
+            {
+                try { if (Directory.Exists(hlsDir)) Directory.Delete(hlsDir, recursive: true); } catch { }
+                video.AnnotatedFilename = null;
+                await db.SaveChangesAsync(ct);
+                return;
+            }
 
             video.DurationSeconds = result.DurationSeconds;
             video.Fps = result.Fps;
@@ -216,6 +234,23 @@ public sealed class VisionRunner
             await db.SaveChangesAsync();
         }
         catch { /* best-effort; a dropped window just means a few missing events */ }
+    }
+
+    // True once the job is no longer Running in the DB — i.e. the API cancelled it (set it
+    // to Failed). Synchronous because it's polled from the CPU-bound analysis loop.
+    private bool IsJobCancelledSync(int jobId)
+    {
+        try
+        {
+            using IServiceScope scope = _scopeFactory.CreateScope();
+            AppDbContext db = NewDb(scope);
+            VisionJobStatus? status = db.VisionJobs
+                .Where(j => j.Id == jobId)
+                .Select(j => (VisionJobStatus?)j.Status)
+                .FirstOrDefault();
+            return status is not null && status != VisionJobStatus.Running;
+        }
+        catch { return false; }   // transient DB error → keep going, don't cancel spuriously
     }
 
     private async Task SaveProgressAsync(int jobId, double progress)

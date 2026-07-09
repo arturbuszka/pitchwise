@@ -123,6 +123,30 @@ public class VideosController : ControllerBase
         return JobToOut(job, video);
     }
 
+    [HttpPost("{analysisId:int}/videos/{videoId:int}/analyze/cancel")]
+    public async Task<ActionResult<VisionJobOut?>> CancelAnalysis(int analysisId, int videoId)
+    {
+        var video = await GetVideoOr404(analysisId, videoId);
+        if (video is null) return NotFound(new { detail = "Video not found" });
+
+        // Mark the active job Failed/cancelled. The worker polls the job status and stops
+        // when it's no longer Running (cross-process signal, no Redis pub/sub needed). This
+        // also unblocks StartAnalysis's dedup so the user can re-run.
+        var job = await _db.VisionJobs
+            .Where(j => j.VideoId == videoId &&
+                        (j.Status == VisionJobStatus.Pending || j.Status == VisionJobStatus.Running))
+            .OrderByDescending(j => j.CreatedAt)
+            .FirstOrDefaultAsync();
+        if (job is null) return Ok((VisionJobOut?)null);
+
+        job.Status = VisionJobStatus.Failed;
+        job.Error = "cancelled";
+        job.FinishedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync();
+
+        return Ok(JobToOut(job, video));
+    }
+
     [HttpGet("{analysisId:int}/videos/{videoId:int}/status")]
     public async Task<ActionResult<VisionJobOut?>> GetStatus(int analysisId, int videoId)
     {

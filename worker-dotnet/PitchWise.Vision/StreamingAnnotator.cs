@@ -21,6 +21,7 @@ public static class StreamingAnnotator
         public double? Fps { get; init; }
         public int FramesProcessed { get; init; }
         public bool EncodeOk { get; init; }
+        public bool Cancelled { get; init; }
     }
 
     /// <param name="videoPath">Source recording.</param>
@@ -40,7 +41,10 @@ public static class StreamingAnnotator
         Action<double>? onProgress = null,
         Action? onFirstSegment = null,
         Action<IReadOnlyList<DetectedEvent>>? onEvents = null,
-        double windowSeconds = 30.0)
+        double windowSeconds = 30.0,
+        string executionProvider = "dml",
+        int deviceId = 0,
+        Func<bool>? isCancelled = null)
     {
         (double? probeDuration, double? probeFps) = FfmpegTools.ProbeVideo(videoPath);
 
@@ -60,7 +64,8 @@ public static class StreamingAnnotator
 
         using var detector = new Detector(
             modelPath, classNames, frameRate: (int)Math.Round(fps),
-            frameStride: stride, imgsz: imgsz);
+            frameStride: stride, imgsz: imgsz,
+            executionProvider: executionProvider, deviceId: deviceId);
 
         var ffmpeg = FfmpegTools.StartEncodeHls(hlsDir, width, height, fps);
         if (ffmpeg is null)
@@ -90,6 +95,9 @@ public static class StreamingAnnotator
             if (fresh.Count > 0) onEvents?.Invoke(fresh);
         }
 
+        bool cancelled = false;
+        double lastCancelCheck = -100.0;
+
         try
         {
             using var frame = new Mat();
@@ -97,6 +105,13 @@ public static class StreamingAnnotator
             while (cap.Read(frame) && !frame.Empty())
             {
                 double ts = srcIndex / fps;
+
+                // Cooperative cancellation: poll at most every ~2s (isCancelled hits the DB).
+                if (isCancelled is not null && ts - lastCancelCheck >= 2.0)
+                {
+                    lastCancelCheck = ts;
+                    if (isCancelled()) { cancelled = true; break; }
+                }
 
                 // Detect on stride-frames; reuse the last result on in-between frames so every
                 // emitted frame carries boxes.
@@ -134,15 +149,16 @@ public static class StreamingAnnotator
                 srcIndex++;
             }
 
-            // Final (partial) window.
-            FlushWindow();
+            // Final (partial) window — skip if cancelled (no point emitting stale events).
+            if (!cancelled) FlushWindow();
 
             ffmpeg.StandardInput.Close();
             ffmpeg.WaitForExit();
-            onProgress?.Invoke(1.0);
+            if (!cancelled) onProgress?.Invoke(1.0);
 
             return new Result
             {
+                Cancelled = cancelled,
                 DurationSeconds = duration > 0 ? duration : probeDuration,
                 Fps = fps,
                 FramesProcessed = framesProcessed,

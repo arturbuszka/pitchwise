@@ -226,6 +226,16 @@ export const api = {
         `${API}/api/analyses/${analysisId}/videos/${videoId}/annotated/index.m3u8`,
       analyze: (analysisId: number, videoId: number): Promise<VisionJob> =>
         fetch(`${API}/api/analyses/${analysisId}/videos/${videoId}/analyze`, { method: "POST" }).then((r) => r.json()),
+      // Cancel the active analysis (marks the job cancelled; the worker stops). Returns the
+      // updated job, or null if there was nothing running.
+      cancel: (analysisId: number, videoId: number): Promise<VisionJob | null> =>
+        fetch(`${API}/api/analyses/${analysisId}/videos/${videoId}/analyze/cancel`, { method: "POST" }).then(
+          async (r) => {
+            if (!r.ok) return null;
+            const text = await r.text();
+            return text ? (JSON.parse(text) as VisionJob) : null;
+          }
+        ),
       status: (analysisId: number, videoId: number): Promise<VisionJob | null> =>
         // Body may be an empty 200 (never analysed) — guard r.json() against empty input.
         fetch(`${API}/api/analyses/${analysisId}/videos/${videoId}/status`, { cache: "no-store" }).then(

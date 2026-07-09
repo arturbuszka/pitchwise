@@ -16,6 +16,11 @@ public sealed class WorkerSettings
     /// <summary>Model input size — must match the export (default 640).</summary>
     public int Imgsz { get; set; } = 640;
 
+    /// <summary>ONNX execution provider: "dml" (DirectML GPU, default) or "cpu".
+    /// Falls back to CPU automatically if DirectML can't initialise.</summary>
+    public string OnnxExecutionProvider { get; set; } = "dml";
+    public int OnnxDeviceId { get; set; }
+
     /// <summary>Process every Nth frame (matches Python FRAME_STRIDE).</summary>
     public int FrameStride { get; set; } = 3;
 

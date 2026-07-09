@@ -13,6 +13,11 @@ public sealed class LiveSettings
     public string? YoloNamesPath { get; set; }
     public int LiveImgsz { get; set; } = 640;
 
+    /// <summary>ONNX execution provider: "dml" (DirectML GPU, default) or "cpu".
+    /// Falls back to CPU automatically if DirectML can't initialise.</summary>
+    public string OnnxExecutionProvider { get; set; } = "dml";
+    public int OnnxDeviceId { get; set; }
+
     /// <summary>"passthrough" (raw frames) | "detect" (YOLO + overlay). Default detect.</summary>
     public string LivePipelineMode { get; set; } = "detect";
 
@@ -38,6 +43,8 @@ public sealed class LiveSettings
         s.YoloModelPath = Env("YOLO_MODEL_PATH") ?? s.YoloModelPath;
         s.YoloNamesPath = Env("YOLO_NAMES_PATH") ?? s.YoloNamesPath;
         if (int.TryParse(Env("LIVE_IMGSZ"), out int isz)) s.LiveImgsz = isz;
+        s.OnnxExecutionProvider = Env("ONNX_EP") ?? s.OnnxExecutionProvider;
+        if (int.TryParse(Env("ONNX_DEVICE_ID"), out int did)) s.OnnxDeviceId = did;
         s.LivePipelineMode = Env("LIVE_PIPELINE_MODE") ?? s.LivePipelineMode;
         if (int.TryParse(Env("MAX_WIDTH"), out int mw)) s.MaxWidth = mw;
         s.FfmpegPath = Env("FFMPEG_PATH") ?? s.FfmpegPath;

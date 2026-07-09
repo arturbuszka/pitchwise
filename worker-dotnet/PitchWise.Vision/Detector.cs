@@ -56,10 +56,13 @@ public sealed class Detector : IDisposable
         int frameRate = 25,
         int frameStride = 5,
         int imgsz = 640,
-        Func<string, string?>? mapClass = null)
+        Func<string, string?>? mapClass = null,
+        string executionProvider = "dml",
+        int deviceId = 0)
     {
         _detector = new Yolo11OnnxDetector(
-            modelPath, classNames, mapClass ?? MapClass, imgsz);
+            modelPath, classNames, mapClass ?? MapClass, imgsz,
+            executionProvider: executionProvider, deviceId: deviceId);
         var config = new BT.ByteTrackerConfig
         {
             TrackThresh = 0.5f,

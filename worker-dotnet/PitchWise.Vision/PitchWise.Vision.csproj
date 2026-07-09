@@ -7,9 +7,16 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- ONNX Runtime for YOLO11 inference. CPU package; swap to
-         Microsoft.ML.OnnxRuntime.Gpu on a CUDA host for live throughput. -->
-    <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.27.0" />
+    <!-- ONNX Runtime for YOLO11 inference. DirectML build: runs on any DX12 GPU
+         (NVIDIA/AMD/Intel) with NO CUDA/cuDNN install, and still includes the CPU EP
+         for fallback. The provider is chosen at runtime (ONNX_EP=dml|cpu). -->
+    <!-- DirectML EP lags the CPU build; 1.24.4 is the latest DirectML release. -->
+    <PackageReference Include="Microsoft.ML.OnnxRuntime.DirectML" Version="1.24.4" />
+    <!-- The redist DirectML.dll (1.15.4, matches ORT 1.24) is NOT auto-copied to output,
+         so ORT loads Windows' old system DirectML.dll (2022) and DML init fails with
+         E_INVALIDARG in AbiCustomRegistry. Reference it explicitly + copy the x64 dll
+         next to the exe so ORT loads the correct version. -->
+    <PackageReference Include="Microsoft.AI.DirectML" Version="1.15.4" GeneratePathProperty="true" />
     <!-- OpenCvSharp for frame decode, letterbox resize, overlay drawing. -->
     <PackageReference Include="OpenCvSharp4" Version="4.13.0.20260627" />
     <!-- ByteTrack.NET: multi-object tracker (replaces supervision.ByteTrack). -->
@@ -24,6 +31,15 @@
   </ItemGroup>
   <ItemGroup Condition="$(RuntimeIdentifier.StartsWith('linux'))">
     <PackageReference Include="OpenCvSharp4.official.runtime.linux-x64" Version="4.13.0.20260627" />
+  </ItemGroup>
+
+  <!-- Copy the correct (NuGet) DirectML.dll next to the output so ORT doesn't fall back to
+       the stale system copy. Windows x64 only; harmless no-op on other RIDs. -->
+  <ItemGroup Condition="('$(RuntimeIdentifier)' == '' or $(RuntimeIdentifier.StartsWith('win'))) and Exists('$(PkgMicrosoft_AI_DirectML)\bin\x64-win\DirectML.dll')">
+    <None Include="$(PkgMicrosoft_AI_DirectML)\bin\x64-win\DirectML.dll">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Link>DirectML.dll</Link>
+    </None>
   </ItemGroup>
 
 </Project>

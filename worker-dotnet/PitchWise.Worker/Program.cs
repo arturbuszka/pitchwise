@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using PitchWise.Api.Config;
 using PitchWise.Api.Data;
+using PitchWise.Api.Models;
 using PitchWise.Vision;
 using PitchWise.Worker;
 using StackExchange.Redis;
@@ -25,6 +26,8 @@ worker.YoloModelPath = Environment.GetEnvironmentVariable("YOLO_MODEL_PATH") ?? 
 worker.YoloNamesPath = Environment.GetEnvironmentVariable("YOLO_NAMES_PATH") ?? worker.YoloNamesPath;
 if (int.TryParse(Environment.GetEnvironmentVariable("FRAME_STRIDE"), out int fs)) worker.FrameStride = fs;
 if (int.TryParse(Environment.GetEnvironmentVariable("LIVE_IMGSZ"), out int isz)) worker.Imgsz = isz;
+worker.OnnxExecutionProvider = Environment.GetEnvironmentVariable("ONNX_EP") ?? worker.OnnxExecutionProvider;
+if (int.TryParse(Environment.GetEnvironmentVariable("ONNX_DEVICE_ID"), out int did)) worker.OnnxDeviceId = did;
 worker.GenerateClips = (Environment.GetEnvironmentVariable("GENERATE_CLIPS") ?? "") is "1" or "true"
     ? true : worker.GenerateClips;
 if ((Environment.GetEnvironmentVariable("RENDER_ANNOTATED") ?? "") is "0" or "false")
@@ -55,6 +58,36 @@ builder.Services.AddSingleton<HighlightRunner>();
 builder.Services.AddHostedService<QueueWorker>();
 
 IHost host = builder.Build();
+
+// Startup cleanup: any job left "Running" is orphaned (the worker died mid-analysis; its
+// queue entry was already RPOP'd and is gone). Mark them Failed so the API's dedup unblocks
+// and the user can re-run — otherwise the video hangs on "Analyzing" forever.
+using (IServiceScope scope = host.Services.CreateScope())
+{
+    try
+    {
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var orphaned = await db.VisionJobs
+            .Where(j => j.Status == VisionJobStatus.Running)
+            .ToListAsync();
+        foreach (var j in orphaned)
+        {
+            j.Status = VisionJobStatus.Failed;
+            j.Error = "worker restarted — job orphaned";
+            j.FinishedAt = DateTime.UtcNow;
+        }
+        if (orphaned.Count > 0)
+        {
+            await db.SaveChangesAsync();
+            Console.WriteLine($"[Worker] Reset {orphaned.Count} orphaned running job(s) to Failed.");
+        }
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"[Worker] Orphan-job cleanup skipped: {ex.Message}");
+    }
+}
+
 host.Run();
 
 static ConfigurationOptions RedisConfig(string url)

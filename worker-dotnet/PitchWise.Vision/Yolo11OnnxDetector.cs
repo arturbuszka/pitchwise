@@ -31,21 +31,78 @@ public sealed class Yolo11OnnxDetector : IDisposable
     /// <param name="imgsz">Square model input size (default 640, must match export).</param>
     /// <param name="scoreThresh">Min class score to keep (ultralytics conf default 0.25).</param>
     /// <param name="nmsThresh">IoU threshold for NMS (ultralytics iou default 0.7).</param>
+    /// <param name="executionProvider">"dml" (DirectML GPU, default) or "cpu". On any DML
+    /// failure we transparently fall back to CPU so the worker never crashes.</param>
+    /// <param name="deviceId">GPU adapter index for DirectML (default 0).</param>
     public Yolo11OnnxDetector(
         string modelPath,
         IReadOnlyDictionary<int, string> classNames,
         Func<string, string?> mapClass,
         int imgsz = 640,
         float scoreThresh = 0.25f,
-        float nmsThresh = 0.7f)
+        float nmsThresh = 0.7f,
+        string executionProvider = "dml",
+        int deviceId = 0)
     {
-        _session = new InferenceSession(modelPath);
+        _session = CreateSession(modelPath, executionProvider, deviceId);
         _inputName = _session.InputMetadata.Keys.First();
         _classNames = classNames;
         _mapClass = mapClass;
         _imgsz = imgsz;
         _scoreThresh = scoreThresh;
         _nmsThresh = nmsThresh;
+    }
+
+    // Builds the inference session on the requested provider. DirectML runs on any DX12
+    // GPU without CUDA; on ANY failure (no GPU, missing DLL, unsupported op) we fall back
+    // to a plain CPU session so the worker keeps running. Every outcome is logged loudly
+    // (console banner + a onnx_provider.log file) so it's never a mystery which one ran.
+    private static InferenceSession CreateSession(string modelPath, string ep, int deviceId)
+    {
+        if (string.Equals(ep, "dml", StringComparison.OrdinalIgnoreCase))
+        {
+            try
+            {
+                var so = new SessionOptions
+                {
+                    // Both are required by the DirectML execution provider.
+                    EnableMemoryPattern = false,
+                    ExecutionMode = ExecutionMode.ORT_SEQUENTIAL,
+                };
+                so.AppendExecutionProvider_DML(deviceId);
+                var session = new InferenceSession(modelPath, so);
+                LogProvider($"DirectML GPU (device {deviceId}) — ACTIVE");
+                return session;
+            }
+            catch (Exception ex)
+            {
+                LogProvider($"DirectML init FAILED ({ex.GetType().Name}: {ex.Message}) — falling back to CPU");
+            }
+        }
+        var cpuSession = new InferenceSession(modelPath);
+        LogProvider("CPU execution provider — ACTIVE");
+        return cpuSession;
+    }
+
+    // Loud, unmissable log of which ONNX provider actually ran: a console banner AND a
+    // onnx_provider.log file in the working dir (survives even when the worker runs as a
+    // background job whose stdout isn't visible).
+    private static void LogProvider(string message)
+    {
+        // Providers compiled into this ORT build (proves the DirectML DLL is present).
+        string available;
+        try { available = string.Join(", ", OrtEnv.Instance().GetAvailableProviders()); }
+        catch { available = "n/a"; }
+        string line = $"[ONNX] {DateTime.Now:HH:mm:ss} {message} | available=[{available}]";
+        string banner = new string('=', 60);
+        Console.WriteLine($"\n{banner}\n{line}\n{banner}\n");
+        try
+        {
+            File.AppendAllText(
+                Path.Combine(AppContext.BaseDirectory, "onnx_provider.log"),
+                line + Environment.NewLine);
+        }
+        catch { /* logging must never break inference */ }
     }
 
     /// <summary>Runs detection on one BGR frame. Boxes are in original-image coords.</summary>

@@ -225,6 +225,19 @@ export function AnalysisDetailClient({
     }
   }
 
+  async function handleCancelAnalysis() {
+    if (activeVideoId == null) return;
+    setBusy(true);
+    try {
+      const j = await api.analyses.videos.cancel(analysis.id, activeVideoId);
+      setJob(j); // failed/cancelled → "Run analysis" re-enabled, dedup unblocked
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const analyzing = job?.status === "running" || job?.status === "pending";
+
   const jobLabel: Record<string, string> = {
     pending: "Queued…",
     running: "Analyzing…",
@@ -381,13 +394,23 @@ export function AnalysisDetailClient({
             >
               ✦ Generate highlight{selectedEvents.size > 0 ? ` (${selectedEvents.size})` : ""}
             </button>
-            <button
-              onClick={handleAnalyze}
-              disabled={busy || activeVideoId == null || job?.status === "running" || job?.status === "pending"}
-              className="bg-[#2f5fe0] hover:bg-[#2451c7] disabled:opacity-50 text-white rounded-[8px] px-3 py-1.5 text-[12px] font-semibold transition-colors"
-            >
-              Run analysis
-            </button>
+            {analyzing ? (
+              <button
+                onClick={handleCancelAnalysis}
+                disabled={busy || activeVideoId == null}
+                className="bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white rounded-[8px] px-3 py-1.5 text-[12px] font-semibold transition-colors"
+              >
+                ■ Stop
+              </button>
+            ) : (
+              <button
+                onClick={handleAnalyze}
+                disabled={busy || activeVideoId == null}
+                className="bg-[#2f5fe0] hover:bg-[#2451c7] disabled:opacity-50 text-white rounded-[8px] px-3 py-1.5 text-[12px] font-semibold transition-colors"
+              >
+                Run analysis
+              </button>
+            )}
           </div>
         </div>
 
