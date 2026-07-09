@@ -32,18 +32,23 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY --from=build /out/worker ./worker
 COPY --from=build /out/live   ./live
-# Model + class-names sidecar (exported ONNX). Baked in; override via YOLO_MODEL_PATH.
-# Ships with yolo11n (COCO fallback); drop football.onnx + football.names.json here
-# and set YOLO_MODEL_PATH=/app/models/football.onnx for production ball detection.
-COPY worker-dotnet/vision-onnx/*.onnx worker-dotnet/vision-onnx/*.names.json ./models/
+# Football model (player/ball/referee/goalkeeper, exported from Darkmyter's
+# yolov8m-640-football-players weights — see worker-dotnet/README.md) + its
+# .names.json sidecar. yolo11n (COCO fallback) is also baked in for override.
+COPY worker-dotnet/vision-onnx/football.onnx worker-dotnet/vision-onnx/football.names.json ./models/
+COPY worker-dotnet/vision-onnx/yolo11n.onnx worker-dotnet/vision-onnx/yolo11n.names.json ./models/
 
-ENV YOLO_MODEL_PATH=/app/models/yolo11n.onnx \
+ENV YOLO_MODEL_PATH=/app/models/football.onnx \
     FFMPEG_PATH=ffmpeg \
     YT_DLP_PATH=yt-dlp \
     LIVE_HLS_DIR=/tmp/live_hls \
-    LIVE_PIPELINE_MODE=passthrough
+    LIVE_PIPELINE_MODE=detect
 
 EXPOSE 8001
 
-# Start both processes; if either exits the container stops (like `& wait`).
-CMD ["sh", "-c", "dotnet /app/worker/PitchWise.Worker.dll & dotnet /app/live/PitchWise.Live.dll & wait -n"]
+# Run the native apphost (not `dotnet foo.dll`) — on Windows dev boxes, invoking the
+# bare .dll via the dotnet.exe muxer can resolve the OS-bundled onnxruntime.dll in
+# System32 ahead of ours (crashes with "version [14] not supported"); the apphost
+# doesn't go through that resolution path. Harmless on Linux either way.
+RUN chmod +x /app/worker/PitchWise.Worker /app/live/PitchWise.Live
+CMD ["sh", "-c", "/app/worker/PitchWise.Worker & /app/live/PitchWise.Live & wait -n"]
