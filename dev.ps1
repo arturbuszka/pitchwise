@@ -24,9 +24,10 @@ Start-Process powershell -ArgumentList "-NoExit", "-Command", "
     `$env:REDIS_URL='redis://localhost:6379';
     `$env:STORAGE_DIR='$storage';
     `$env:WEB_ORIGIN='http://localhost:3000';
-    # Exported YOLO11 ONNX + its .names.json sidecar. Swap to football.onnx for
-    # production ball detection (see worker-dotnet/README.md).
-    `$env:YOLO_MODEL_PATH='$root\worker-dotnet\vision-onnx\yolo11n.onnx';
+    # Football-specific model (player/ball/referee/goalkeeper) exported from
+    # https://github.com/Darkmyter/Football-Players-Tracking weights. Falls back to
+    # yolo11n.onnx (COCO, person-only) if you haven't run the export yet.
+    `$env:YOLO_MODEL_PATH='$root\worker-dotnet\vision-onnx\football.onnx';
     # Live pipeline: 'passthrough' (raw frames) or 'detect' (YOLO overlay). Default safe.
     `$env:LIVE_PIPELINE_MODE='detect';
     # Use the winget-installed ffmpeg 8.x (has -hls_flags). Without this, an old

@@ -65,8 +65,9 @@ services:
       DATABASE_CONNECTION: "Host=postgres;Port=5432;Database=pitchwise;Username=pitchwise;Password=pitchwise"
       REDIS_URL: "redis://redis:6379"
       STORAGE_DIR: "/app/storage"
-      # yolo11n baked in; mount + point here for the football model.
-      YOLO_MODEL_PATH: "/app/models/yolo11n.onnx"
+      # Football model (player/ball/referee/goalkeeper) baked into the image.
+      # Fallback: /app/models/yolo11n.onnx (COCO, person-only, no ball detection).
+      YOLO_MODEL_PATH: "/app/models/football.onnx"
       LIVE_PIPELINE_MODE: "detect"
     volumes:
       - ./storage:/app/storage

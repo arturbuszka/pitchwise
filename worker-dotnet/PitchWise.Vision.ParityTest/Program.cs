@@ -85,6 +85,12 @@ while (idx <= maxFrame && cap.Read(frame) && !frame.Empty())
                 Console.WriteLine($"  frame {idx}: MISSING {g.name} conf={g.conf:F3} box=[{string.Join(",", g.box.Select(v => v.ToString("F0")))}]");
             }
         }
+        for (int j = 0; j < got.Count; j++)
+        {
+            if (used[j]) continue;
+            Detection d = got[j];
+            Console.WriteLine($"  frame {idx}: EXTRA {d.Cls} conf={d.Confidence:F3} box=[{d.X1:F0},{d.Y1:F0},{d.X2:F0},{d.Y2:F0}]");
+        }
         int extra = used.Count(u => !u);
         totalMatched += matched; totalGolden += goldDets.Count; totalExtra += extra;
         bool pass = matched == goldDets.Count && extra == 0;

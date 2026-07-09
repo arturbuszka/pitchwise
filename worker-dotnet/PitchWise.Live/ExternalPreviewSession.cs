@@ -197,6 +197,15 @@ public sealed class ExternalPreviewSession
             return;
         }
 
+        // Some CDNs mask HLS segment URLs behind non-standard extensions (.png, .ts.m3u8,
+        // signed query strings, ...). ffmpeg's HLS demuxer rejects those by default
+        // ("not in allowed_segment_extensions"). OpenCvSharp's ffmpeg backend only takes
+        // demuxer options via this env var (no C++ API for it) — set it right before
+        // opening so it applies to this capture's ffmpeg instance.
+        Environment.SetEnvironmentVariable(
+            "OPENCV_FFMPEG_CAPTURE_OPTIONS",
+            "allowed_extensions;ALL|protocol_whitelist;file,http,https,tcp,tls,crypto");
+
         using var cap = new VideoCapture(streamUrl);
         if (!cap.IsOpened())
         {
