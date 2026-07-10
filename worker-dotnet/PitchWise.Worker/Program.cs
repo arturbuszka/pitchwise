@@ -24,6 +24,7 @@ var worker = new WorkerSettings();
 builder.Configuration.GetSection("Worker").Bind(worker);
 worker.YoloModelPath = Environment.GetEnvironmentVariable("YOLO_MODEL_PATH") ?? worker.YoloModelPath;
 worker.YoloNamesPath = Environment.GetEnvironmentVariable("YOLO_NAMES_PATH") ?? worker.YoloNamesPath;
+worker.ReidModelPath = Environment.GetEnvironmentVariable("REID_MODEL_PATH") ?? worker.ReidModelPath;
 if (int.TryParse(Environment.GetEnvironmentVariable("FRAME_STRIDE"), out int fs)) worker.FrameStride = fs;
 if (int.TryParse(Environment.GetEnvironmentVariable("LIVE_IMGSZ"), out int isz)) worker.Imgsz = isz;
 worker.OnnxExecutionProvider = Environment.GetEnvironmentVariable("ONNX_EP") ?? worker.OnnxExecutionProvider;

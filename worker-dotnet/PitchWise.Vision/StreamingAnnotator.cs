@@ -22,6 +22,10 @@ public static class StreamingAnnotator
         public int FramesProcessed { get; init; }
         public bool EncodeOk { get; init; }
         public bool Cancelled { get; init; }
+
+        /// <summary>Per-player on-pitch time, ordered by descending time. Empty when Re-ID
+        /// is disabled (no reidModelPath).</summary>
+        public IReadOnlyList<PlayerTimeOnPitch> TimeOnPitch { get; init; } = Array.Empty<PlayerTimeOnPitch>();
     }
 
     /// <param name="videoPath">Source recording.</param>
@@ -44,7 +48,8 @@ public static class StreamingAnnotator
         double windowSeconds = 30.0,
         string executionProvider = "dml",
         int deviceId = 0,
-        Func<bool>? isCancelled = null)
+        Func<bool>? isCancelled = null,
+        string? reidModelPath = null)
     {
         (double? probeDuration, double? probeFps) = FfmpegTools.ProbeVideo(videoPath);
 
@@ -65,7 +70,12 @@ public static class StreamingAnnotator
         using var detector = new Detector(
             modelPath, classNames, frameRate: (int)Math.Round(fps),
             frameStride: stride, imgsz: imgsz,
-            executionProvider: executionProvider, deviceId: deviceId);
+            executionProvider: executionProvider, deviceId: deviceId,
+            reidModelPath: reidModelPath);
+
+        // Per-player on-pitch time, fed from the (PlayerId-carrying) FrameResults. Only
+        // meaningful when Re-ID is enabled; harmless no-op otherwise (no PlayerIds present).
+        var timeOnPitch = new TimeOnPitchTracker(maxGapSeconds: Math.Max(2.0, 3.0 * stride / fps));
 
         var ffmpeg = FfmpegTools.StartEncodeHls(hlsDir, width, height, fps);
         if (ffmpeg is null)
@@ -124,6 +134,7 @@ public static class StreamingAnnotator
             foreach (FrameResult fr in results)
             {
                 window.Add(fr);
+                timeOnPitch.Add(fr);
                 framesProcessed++;
                 if (fr.TimestampSeconds - windowStart >= windowSeconds)
                 {
@@ -203,6 +214,7 @@ public static class StreamingAnnotator
                 Fps = fps,
                 FramesProcessed = framesProcessed,
                 EncodeOk = ffmpeg.ExitCode == 0 && File.Exists(Path.Combine(hlsDir, "index.m3u8")),
+                TimeOnPitch = cancelled ? Array.Empty<PlayerTimeOnPitch>() : timeOnPitch.Report(),
             };
         }
         finally

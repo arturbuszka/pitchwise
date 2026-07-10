@@ -22,7 +22,10 @@ public static class ObjectClass
 /// <param name="X2">Right.</param>
 /// <param name="Y2">Bottom.</param>
 /// <param name="Confidence">Detection score.</param>
-/// <param name="TrackId">Assigned by the tracker; null before tracking.</param>
+/// <param name="TrackId">Assigned by the tracker; null before tracking. Volatile — a
+/// single player may get a new TrackId after occlusion / leaving the frame.</param>
+/// <param name="PlayerId">Stable match-long identity assigned by <see cref="PlayerReId"/>
+/// on top of <paramref name="TrackId"/> (merges switched track ids); null before Re-ID.</param>
 public readonly record struct Detection(
     string Cls,
     double X1,
@@ -30,7 +33,8 @@ public readonly record struct Detection(
     double X2,
     double Y2,
     double Confidence,
-    int? TrackId = null)
+    int? TrackId = null,
+    int? PlayerId = null)
 {
     public double CenterX => (X1 + X2) / 2.0;
     public double CenterY => (Y1 + Y2) / 2.0;
@@ -66,3 +70,17 @@ public readonly record struct DetectedEvent(
     double TimestampSeconds,
     double Confidence,
     string? Label = null);
+
+/// <summary>Aggregated on-pitch presence for one stable <see cref="Detection.PlayerId"/>,
+/// produced by <see cref="TimeOnPitchTracker"/>.</summary>
+/// <param name="PlayerId">Stable player identity (from <see cref="PlayerReId"/>).</param>
+/// <param name="SecondsOnPitch">Total presence in seconds (short gaps bridged).</param>
+/// <param name="FirstSeenSeconds">Absolute video timestamp of first appearance.</param>
+/// <param name="LastSeenSeconds">Absolute video timestamp of last appearance.</param>
+/// <param name="FramesSeen">Number of processed frames the player appeared in.</param>
+public readonly record struct PlayerTimeOnPitch(
+    int PlayerId,
+    double SecondsOnPitch,
+    double FirstSeenSeconds,
+    double LastSeenSeconds,
+    int FramesSeen);

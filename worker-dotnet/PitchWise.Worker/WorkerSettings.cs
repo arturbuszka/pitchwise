@@ -13,6 +13,11 @@ public sealed class WorkerSettings
     /// Produced by export_and_golden.py (the golden's "names") or written by hand.</summary>
     public string? YoloNamesPath { get; set; }
 
+    /// <summary>Path to the exported OSNet person-Re-ID .onnx model (see export_reid_onnx.py).
+    /// When set, players get a stable <see cref="Vision.Detection.PlayerId"/> across track-id
+    /// switches and a time-on-pitch report is produced. Null/empty disables Re-ID.</summary>
+    public string? ReidModelPath { get; set; }
+
     /// <summary>Model input size — must match the export (default 640).</summary>
     public int Imgsz { get; set; } = 640;
 

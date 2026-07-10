@@ -105,7 +105,13 @@ public sealed class VisionRunner
                 onEvents: OnEvents,
                 executionProvider: _worker.OnnxExecutionProvider,
                 deviceId: _worker.OnnxDeviceId,
-                isCancelled: IsCancelled), ct);
+                isCancelled: IsCancelled,
+                reidModelPath: _worker.ReidModelPath), ct);
+
+            // Persist the per-player time-on-pitch report next to the HLS output (JSON sidecar).
+            // Best-effort: a report we can't write shouldn't fail the whole analysis job.
+            if (!result.Cancelled && result.TimeOnPitch.Count > 0)
+                WriteTimeOnPitchReport(hlsDir, result.TimeOnPitch);
 
             // 3. Finalise in one scope: duration/fps, ensure annotated dir set, mark done.
             using IServiceScope scope = _scopeFactory.CreateScope();
@@ -167,6 +173,25 @@ public sealed class VisionRunner
                 job.FinishedAt = DateTime.UtcNow;
                 await db.SaveChangesAsync(ct);
             }
+        }
+    }
+
+    // Writes the per-player on-pitch time as a JSON sidecar in the video's HLS dir. Also logs
+    // a short summary to the console so it's visible during a manual/verification run.
+    private static void WriteTimeOnPitchReport(string hlsDir, IReadOnlyList<PlayerTimeOnPitch> report)
+    {
+        try
+        {
+            Directory.CreateDirectory(hlsDir);
+            string path = Path.Combine(hlsDir, "time_on_pitch.json");
+            string json = System.Text.Json.JsonSerializer.Serialize(
+                report, new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
+            File.WriteAllText(path, json);
+            Console.WriteLine($"[Worker] time-on-pitch: {report.Count} players -> {path}");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[Worker] time-on-pitch report write skipped: {ex.Message}");
         }
     }
 

@@ -43,6 +43,10 @@ public sealed class Detector : IDisposable
     private readonly Yolo11OnnxDetector _detector;
     private readonly BT.ByteTracker _tracker;
     private readonly int _frameStride;
+    // Re-ID layer on top of ByteTrack's volatile ids. Both null when no Re-ID model is
+    // configured (e.g. parity/smoke tests) — the detector then behaves exactly as before.
+    private readonly OsNetOnnxEmbedder? _embedder;
+    private readonly PlayerReId? _reId;
 
     /// <param name="modelPath">Exported YOLO11 .onnx.</param>
     /// <param name="classNames">model class-id → raw name (from the exported model / golden).</param>
@@ -50,6 +54,8 @@ public sealed class Detector : IDisposable
     /// <param name="frameStride">Process every Nth frame (matches Python frame_stride).</param>
     /// <param name="imgsz">Model input size (must match the export).</param>
     /// <param name="mapClass">Class-name mapper; defaults to <see cref="MapClass"/>.</param>
+    /// <param name="reidModelPath">Exported OSNet .onnx for player Re-ID; null disables Re-ID
+    /// (detections then carry only volatile TrackId, no stable PlayerId).</param>
     public Detector(
         string modelPath,
         IReadOnlyDictionary<int, string> classNames,
@@ -58,7 +64,8 @@ public sealed class Detector : IDisposable
         int imgsz = 640,
         Func<string, string?>? mapClass = null,
         string executionProvider = "dml",
-        int deviceId = 0)
+        int deviceId = 0,
+        string? reidModelPath = null)
     {
         _detector = new Yolo11OnnxDetector(
             modelPath, classNames, mapClass ?? MapClass, imgsz,
@@ -74,11 +81,17 @@ public sealed class Detector : IDisposable
         BT.BaseTrack.ResetCount();
         _tracker = new BT.ByteTracker(config, frameRate);
         _frameStride = Math.Max(1, frameStride);
+
+        if (!string.IsNullOrWhiteSpace(reidModelPath))
+        {
+            _embedder = new OsNetOnnxEmbedder(reidModelPath!, executionProvider, deviceId);
+            _reId = new PlayerReId();
+        }
     }
 
     /// <summary>Detect + track on a single BGR frame.</summary>
     public FrameResult DetectFrame(Mat frame, int frameIndex, double timestampSeconds) =>
-        TrackAndAttach(_detector.Detect(frame), frameIndex, timestampSeconds);
+        TrackAndAttach(_detector.Detect(frame), frame, frameIndex, timestampSeconds);
 
     /// <summary>
     /// Detect on N frames in ONE batched YOLO inference, then run the (stateful, sequential)
@@ -97,13 +110,15 @@ public sealed class Detector : IDisposable
 
         var results = new List<FrameResult>(batch.Count);
         for (int k = 0; k < batch.Count; k++)
-            results.Add(TrackAndAttach(perFrame[k], batch[k].frameIndex, batch[k].timestampSeconds));
+            results.Add(TrackAndAttach(perFrame[k], batch[k].frame, batch[k].frameIndex, batch[k].timestampSeconds));
         return results;
     }
 
-    /// <summary>Runs the tracker on one frame's detections and re-attaches track ids by IoU.
-    /// Stateful — must be called once per processed frame in ascending order.</summary>
-    private FrameResult TrackAndAttach(IReadOnlyList<Detection> classed, int frameIndex, double timestampSeconds)
+    /// <summary>Runs the tracker on one frame's detections and re-attaches track ids by IoU,
+    /// then (if Re-ID is enabled) assigns a stable PlayerId from the player crops in
+    /// <paramref name="frame"/>. Stateful — must be called once per processed frame in
+    /// ascending order.</summary>
+    private FrameResult TrackAndAttach(IReadOnlyList<Detection> classed, Mat frame, int frameIndex, double timestampSeconds)
     {
         // Feed boxes+scores to the tracker; it returns boxes+ids (no class).
         var btDets = new List<BT.Detection>(classed.Count);
@@ -131,12 +146,48 @@ public sealed class Detector : IDisposable
             withIds.Add(d with { TrackId = id });
         }
 
+        IReadOnlyList<Detection> final = AssignPlayerIds(withIds, frame, frameIndex);
+
         return new FrameResult
         {
             FrameIndex = frameIndex,
             TimestampSeconds = timestampSeconds,
-            Detections = withIds,
+            Detections = final,
         };
+    }
+
+    /// <summary>Computes OSNet embeddings for the player crops and maps volatile track ids to
+    /// stable PlayerIds via <see cref="PlayerReId"/>. No-op passthrough when Re-ID is disabled.
+    /// Embeddings run as ONE batched inference over all player/goalkeeper boxes in the frame.</summary>
+    private IReadOnlyList<Detection> AssignPlayerIds(IReadOnlyList<Detection> withIds, Mat frame, int frameIndex)
+    {
+        if (_embedder is null || _reId is null) return withIds;
+
+        // Embed all detections (index-aligned) so PlayerReId can consume by position; only
+        // player-like boxes actually get a crop, others get an empty (no-embedding) vector.
+        var toEmbed = new List<Detection>(withIds.Count);
+        var embedIndex = new int[withIds.Count];   // maps detection -> slot in toEmbed, or -1
+        for (int i = 0; i < withIds.Count; i++)
+        {
+            Detection d = withIds[i];
+            if ((d.Cls == ObjectClass.Player || d.Cls == ObjectClass.Goalkeeper) && d.TrackId is not null)
+            {
+                embedIndex[i] = toEmbed.Count;
+                toEmbed.Add(d);
+            }
+            else embedIndex[i] = -1;
+        }
+
+        IReadOnlyList<float[]> embedded = toEmbed.Count > 0
+            ? _embedder.EmbedBatch(frame, toEmbed)
+            : Array.Empty<float[]>();
+
+        // Re-expand to a per-detection embedding list (empty vector where no crop was taken).
+        var embeddings = new List<float[]>(withIds.Count);
+        for (int i = 0; i < withIds.Count; i++)
+            embeddings.Add(embedIndex[i] >= 0 ? embedded[embedIndex[i]] : Array.Empty<float>());
+
+        return _reId.Assign(withIds, embeddings, frameIndex);
     }
 
     /// <summary>Iterates frames (every frame_stride) yielding detections with track ids.
@@ -191,5 +242,9 @@ public sealed class Detector : IDisposable
         return union <= 0.0 ? 0.0 : inter / union;
     }
 
-    public void Dispose() => _detector.Dispose();
+    public void Dispose()
+    {
+        _detector.Dispose();
+        _embedder?.Dispose();
+    }
 }

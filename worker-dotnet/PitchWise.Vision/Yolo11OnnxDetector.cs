@@ -71,29 +71,30 @@ public sealed class Yolo11OnnxDetector : IDisposable
                 };
                 so.AppendExecutionProvider_DML(deviceId);
                 var session = new InferenceSession(modelPath, so);
-                LogProvider($"DirectML GPU (device {deviceId}) — ACTIVE");
+                LogProvider($"DirectML GPU (device {deviceId}) — ACTIVE", "YOLO");
                 return session;
             }
             catch (Exception ex)
             {
-                LogProvider($"DirectML init FAILED ({ex.GetType().Name}: {ex.Message}) — falling back to CPU");
+                LogProvider($"DirectML init FAILED ({ex.GetType().Name}: {ex.Message}) — falling back to CPU", "YOLO");
             }
         }
         var cpuSession = new InferenceSession(modelPath);
-        LogProvider("CPU execution provider — ACTIVE");
+        LogProvider("CPU execution provider — ACTIVE", "YOLO");
         return cpuSession;
     }
 
     // Loud, unmissable log of which ONNX provider actually ran: a console banner AND a
     // onnx_provider.log file in the working dir (survives even when the worker runs as a
-    // background job whose stdout isn't visible).
-    private static void LogProvider(string message)
+    // background job whose stdout isn't visible). Shared with OsNetOnnxEmbedder so the Re-ID
+    // model's provider is just as visible; <paramref name="model"/> tags which one it is.
+    internal static void LogProvider(string message, string model = "YOLO")
     {
         // Providers compiled into this ORT build (proves the DirectML DLL is present).
         string available;
         try { available = string.Join(", ", OrtEnv.Instance().GetAvailableProviders()); }
         catch { available = "n/a"; }
-        string line = $"[ONNX] {DateTime.Now:HH:mm:ss} {message} | available=[{available}]";
+        string line = $"[ONNX] {DateTime.Now:HH:mm:ss} [{model}] {message} | available=[{available}]";
         string banner = new string('=', 60);
         Console.WriteLine($"\n{banner}\n{line}\n{banner}\n");
         try
