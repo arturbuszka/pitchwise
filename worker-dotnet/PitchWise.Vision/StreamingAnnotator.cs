@@ -1,4 +1,6 @@
 using OpenCvSharp;
+using PitchWise.Engine;
+using PitchWise.Engine.Rules;
 
 namespace PitchWise.Vision;
 
@@ -34,6 +36,12 @@ public static class StreamingAnnotator
     /// caller can flag playback-ready while analysis continues.</param>
     /// <param name="onEvents">Fired per window with newly detected events (absolute timestamps).</param>
     /// <param name="windowSeconds">Rolling event-detection window length (default 30s).</param>
+    /// <param name="homography">Pitch calibration. When null the engine runs in normalized
+    /// coordinates and, by design, emits no distance-derived events — metre thresholds applied to
+    /// pixel fractions would produce confident nonsense.</param>
+    /// <param name="engineDumpPath">Write one observation per processed frame here (JSONL) for
+    /// offline rule tuning via <see cref="WorldStateReplay"/>. Null disables the dump.</param>
+    /// <param name="engineConfig">Football thresholds; null uses the defaults.</param>
     public static Result Run(
         string videoPath,
         string hlsDir,
@@ -49,7 +57,10 @@ public static class StreamingAnnotator
         string executionProvider = "dml",
         int deviceId = 0,
         Func<bool>? isCancelled = null,
-        string? reidModelPath = null)
+        string? reidModelPath = null,
+        Homography? homography = null,
+        string? engineDumpPath = null,
+        EngineConfig? engineConfig = null)
     {
         (double? probeDuration, double? probeFps) = FfmpegTools.ProbeVideo(videoPath);
 
@@ -67,15 +78,34 @@ public static class StreamingAnnotator
         int stride = Math.Max(1, frameStride);
         double duration = probeDuration ?? (cap.Get(VideoCaptureProperties.FrameCount) / fps);
 
+        // The football engine needs a stable PlayerId to vote a player's team and to track who
+        // holds the ball, so it rides on Re-ID: no Re-ID model, no engine.
+        bool engineEnabled = !string.IsNullOrWhiteSpace(reidModelPath);
+
         using var detector = new Detector(
             modelPath, classNames, frameRate: (int)Math.Round(fps),
             frameStride: stride, imgsz: imgsz,
             executionProvider: executionProvider, deviceId: deviceId,
-            reidModelPath: reidModelPath);
+            reidModelPath: reidModelPath, classifyTeams: engineEnabled);
 
         // Per-player on-pitch time, fed from the (PlayerId-carrying) FrameResults. Only
         // meaningful when Re-ID is enabled; harmless no-op otherwise (no PlayerIds present).
         var timeOnPitch = new TimeOnPitchTracker(maxGapSeconds: Math.Max(2.0, 3.0 * stride / fps));
+
+        // Vision -> WorldState -> football rules. Everything below this line reasons about the
+        // match, not about pixels; swapping the detector leaves it untouched.
+        EngineConfig engCfg = engineConfig ?? new EngineConfig();
+        WorldStateBuilder? world = engineEnabled ? new WorldStateBuilder(engCfg) : null;
+        RuleEngine? ruleEngine = engineEnabled
+            ? new RuleEngine(new List<IGameRule> { new PossessionRule(), new PassRule(engCfg) }, engCfg)
+            : null;
+
+        // The dump header carries the two team colours, which the classifier only knows after it
+        // has seeded. Opening it lazily keeps that diagnostic in the file; a header written on
+        // frame 0 could only ever say "unknown".
+        WorldStateJsonl? dump = null;
+        bool dumpAttempted = false;
+        var pendingObservations = new List<FrameObservation>();
 
         var ffmpeg = FfmpegTools.StartEncodeHls(hlsDir, width, height, fps);
         if (ffmpeg is null)
@@ -92,10 +122,10 @@ public static class StreamingAnnotator
         double windowStart = 0.0;
         var emittedKeys = new HashSet<string>();   // dedup across overlap (type|rounded-ts)
 
-        void FlushWindow()
+        // Both event sources — the legacy ball-trajectory heuristic and the football engine —
+        // funnel through here, so the same event can never be reported twice.
+        void EmitFresh(IReadOnlyList<DetectedEvent> found)
         {
-            if (window.Count == 0) return;
-            List<DetectedEvent> found = Events.Detect(window, eventConfig);
             var fresh = new List<DetectedEvent>();
             foreach (DetectedEvent e in found)
             {
@@ -103,6 +133,40 @@ public static class StreamingAnnotator
                 if (emittedKeys.Add(key)) fresh.Add(e);
             }
             if (fresh.Count > 0) onEvents?.Invoke(fresh);
+        }
+
+        void FlushWindow()
+        {
+            if (window.Count == 0) return;
+            EmitFresh(Events.Detect(window, eventConfig));
+        }
+
+        // Buffer observations until the team classifier has settled, then open the dump with the
+        // real team colours in its header and replay the buffer into it. If the classifier never
+        // settles, flush anyway once the buffer is large enough: a dump with null colours is
+        // itself the diagnosis.
+        void RecordObservation(FrameObservation obs)
+        {
+            if (engineDumpPath is null || dumpAttempted && dump is null) return;
+
+            if (dump is not null) { dump.Append(obs); return; }
+
+            pendingObservations.Add(obs);
+            (string? colorA, string? colorB) = detector.TeamColors;
+            bool settled = colorA is not null;
+            bool givenUp = pendingObservations.Count >= 200;
+            if (!settled && !givenUp) return;
+
+            dumpAttempted = true;
+            dump = WorldStateJsonl.TryCreate(engineDumpPath, new WorldStateJsonl.Header(
+                Fps: fps, FrameStride: stride,
+                PitchLength: engCfg.PitchLength, PitchWidth: engCfg.PitchWidth,
+                NormalizedCoords: homography is null,
+                TeamColorA: colorA, TeamColorB: colorB));
+            if (dump is not null)
+                foreach (FrameObservation buffered in pendingObservations) dump.Append(buffered);
+            pendingObservations.Clear();
+            pendingObservations.TrimExcess();
         }
 
         bool cancelled = false;
@@ -126,16 +190,30 @@ public static class StreamingAnnotator
             foreach (var p in pending)
                 if (p.isStride) strideItems.Add((p.frame, p.srcIndex, p.ts));
 
-            IReadOnlyList<FrameResult> results = strideItems.Count > 0
-                ? detector.DetectFramesBatched(strideItems)
-                : Array.Empty<FrameResult>();
+            IReadOnlyList<TrackedFrame> tracked = strideItems.Count > 0
+                ? detector.TrackFramesBatched(strideItems)
+                : Array.Empty<TrackedFrame>();
 
-            // 2. Feed results into the rolling event window in order (same logic as before).
-            foreach (FrameResult fr in results)
+            // 2. Feed results into the rolling event window in order (same logic as before),
+            //    and — additively — through the football engine.
+            foreach (TrackedFrame tf in tracked)
             {
+                FrameResult fr = tf.Frame;
                 window.Add(fr);
                 timeOnPitch.Add(fr);
                 framesProcessed++;
+
+                if (world is not null && ruleEngine is not null)
+                {
+                    FrameObservation obs = ObservationMapper.ToObservation(
+                        fr, tf.Teams, homography, width, height);
+                    RecordObservation(obs);
+                    WorldState ws = world.Add(obs);
+                    IReadOnlyList<DetectedEvent> engineEvents =
+                        EngineEventShim.ToDetectedEvents(ruleEngine.OnFrame(ws));
+                    if (engineEvents.Count > 0) EmitFresh(engineEvents);
+                }
+
                 if (fr.TimestampSeconds - windowStart >= windowSeconds)
                 {
                     FlushWindow();
@@ -149,7 +227,7 @@ public static class StreamingAnnotator
             int resultCursor = 0;
             foreach (var p in pending)
             {
-                if (p.isStride) lastResult = results[resultCursor++];
+                if (p.isStride) lastResult = tracked[resultCursor++].Frame;
 
                 if (lastResult is not null)
                     Overlay.Draw(p.frame, lastResult, flags);
@@ -201,7 +279,12 @@ public static class StreamingAnnotator
             if (!cancelled && !writeFailed) ProcessBatch();
 
             // Final (partial) window — skip if cancelled (no point emitting stale events).
-            if (!cancelled && !writeFailed) FlushWindow();
+            if (!cancelled && !writeFailed)
+            {
+                FlushWindow();
+                if (ruleEngine is not null)
+                    EmitFresh(EngineEventShim.ToDetectedEvents(ruleEngine.Flush()));
+            }
 
             ffmpeg.StandardInput.Close();
             ffmpeg.WaitForExit();
@@ -219,6 +302,22 @@ public static class StreamingAnnotator
         }
         finally
         {
+            // A short video may end before the team classifier seeds. Write what we have —
+            // an observation dump is diagnostics, and one with null team colours still says
+            // exactly why possession was never attributed.
+            if (engineDumpPath is not null && dump is null && pendingObservations.Count > 0)
+            {
+                (string? colorA, string? colorB) = detector.TeamColors;
+                dump = WorldStateJsonl.TryCreate(engineDumpPath, new WorldStateJsonl.Header(
+                    Fps: fps, FrameStride: stride,
+                    PitchLength: engCfg.PitchLength, PitchWidth: engCfg.PitchWidth,
+                    NormalizedCoords: homography is null,
+                    TeamColorA: colorA, TeamColorB: colorB));
+                if (dump is not null)
+                    foreach (FrameObservation buffered in pendingObservations) dump.Append(buffered);
+            }
+            dump?.Dispose();
+
             // Dispose any buffered clones not yet written (cancel / write error / exception).
             foreach (var p in pending) { try { p.frame.Dispose(); } catch { } }
             pending.Clear();

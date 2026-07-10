@@ -1,7 +1,18 @@
 using OpenCvSharp;
+using PitchWise.Engine;
 using BT = ByteTrack;
 
 namespace PitchWise.Vision;
+
+/// <summary>A processed frame plus the team assignment for each of its detections.</summary>
+/// <param name="Teams">Index-aligned with <c>Frame.Detections</c>. Empty when team
+/// classification is disabled or has not yet seeded.</param>
+/// <remarks>Teams travel alongside <see cref="FrameResult"/> rather than inside
+/// <see cref="Detection"/> because that record struct is the contract the parity/golden tests
+/// compare against the original Python pipeline.</remarks>
+public readonly record struct TrackedFrame(
+    FrameResult Frame,
+    IReadOnlyList<TeamId> Teams);
 
 /// <summary>
 /// Object detection + tracking on video frames. Port of vision/detector.py:
@@ -47,6 +58,9 @@ public sealed class Detector : IDisposable
     // configured (e.g. parity/smoke tests) — the detector then behaves exactly as before.
     private readonly OsNetOnnxEmbedder? _embedder;
     private readonly PlayerReId? _reId;
+    // Jersey-colour team assignment. Needs a stable PlayerId to vote over time, so it is only
+    // useful alongside Re-ID; null when either is disabled.
+    private readonly TeamColorClassifier? _teams;
 
     /// <param name="modelPath">Exported YOLO11 .onnx.</param>
     /// <param name="classNames">model class-id → raw name (from the exported model / golden).</param>
@@ -56,6 +70,8 @@ public sealed class Detector : IDisposable
     /// <param name="mapClass">Class-name mapper; defaults to <see cref="MapClass"/>.</param>
     /// <param name="reidModelPath">Exported OSNet .onnx for player Re-ID; null disables Re-ID
     /// (detections then carry only volatile TrackId, no stable PlayerId).</param>
+    /// <param name="classifyTeams">Assign each player a team from jersey colour. Requires Re-ID:
+    /// the team vote is taken over a player's recent frames, which needs a stable identity.</param>
     public Detector(
         string modelPath,
         IReadOnlyDictionary<int, string> classNames,
@@ -65,7 +81,8 @@ public sealed class Detector : IDisposable
         Func<string, string?>? mapClass = null,
         string executionProvider = "dml",
         int deviceId = 0,
-        string? reidModelPath = null)
+        string? reidModelPath = null,
+        bool classifyTeams = false)
     {
         _detector = new Yolo11OnnxDetector(
             modelPath, classNames, mapClass ?? MapClass, imgsz,
@@ -86,12 +103,18 @@ public sealed class Detector : IDisposable
         {
             _embedder = new OsNetOnnxEmbedder(reidModelPath!, executionProvider, deviceId);
             _reId = new PlayerReId();
+            if (classifyTeams) _teams = new TeamColorClassifier();
         }
     }
 
+    /// <summary>The two frozen jersey colours as "#rrggbb", once team classification has seeded.
+    /// Null before that, or when teams are disabled. Recorded in the world-state dump header so a
+    /// bad k=2 split can be diagnosed from the file.</summary>
+    public (string? A, string? B) TeamColors => (_teams?.ColorA, _teams?.ColorB);
+
     /// <summary>Detect + track on a single BGR frame.</summary>
     public FrameResult DetectFrame(Mat frame, int frameIndex, double timestampSeconds) =>
-        TrackAndAttach(_detector.Detect(frame), frame, frameIndex, timestampSeconds);
+        TrackAndAttach(_detector.Detect(frame), frame, frameIndex, timestampSeconds).Frame;
 
     /// <summary>
     /// Detect on N frames in ONE batched YOLO inference, then run the (stateful, sequential)
@@ -102,13 +125,24 @@ public sealed class Detector : IDisposable
     public IReadOnlyList<FrameResult> DetectFramesBatched(
         IReadOnlyList<(Mat frame, int frameIndex, double timestampSeconds)> batch)
     {
-        if (batch.Count == 0) return Array.Empty<FrameResult>();
+        IReadOnlyList<TrackedFrame> tracked = TrackFramesBatched(batch);
+        var results = new List<FrameResult>(tracked.Count);
+        foreach (TrackedFrame t in tracked) results.Add(t.Frame);
+        return results;
+    }
+
+    /// <summary>As <see cref="DetectFramesBatched"/>, but also returns the per-detection team
+    /// assignment needed to build an engine observation.</summary>
+    public IReadOnlyList<TrackedFrame> TrackFramesBatched(
+        IReadOnlyList<(Mat frame, int frameIndex, double timestampSeconds)> batch)
+    {
+        if (batch.Count == 0) return Array.Empty<TrackedFrame>();
 
         var mats = new List<Mat>(batch.Count);
         foreach (var b in batch) mats.Add(b.frame);
         IReadOnlyList<IReadOnlyList<Detection>> perFrame = _detector.DetectBatch(mats);
 
-        var results = new List<FrameResult>(batch.Count);
+        var results = new List<TrackedFrame>(batch.Count);
         for (int k = 0; k < batch.Count; k++)
             results.Add(TrackAndAttach(perFrame[k], batch[k].frame, batch[k].frameIndex, batch[k].timestampSeconds));
         return results;
@@ -118,7 +152,7 @@ public sealed class Detector : IDisposable
     /// then (if Re-ID is enabled) assigns a stable PlayerId from the player crops in
     /// <paramref name="frame"/>. Stateful — must be called once per processed frame in
     /// ascending order.</summary>
-    private FrameResult TrackAndAttach(IReadOnlyList<Detection> classed, Mat frame, int frameIndex, double timestampSeconds)
+    private TrackedFrame TrackAndAttach(IReadOnlyList<Detection> classed, Mat frame, int frameIndex, double timestampSeconds)
     {
         // Feed boxes+scores to the tracker; it returns boxes+ids (no class).
         var btDets = new List<BT.Detection>(classed.Count);
@@ -148,12 +182,18 @@ public sealed class Detector : IDisposable
 
         IReadOnlyList<Detection> final = AssignPlayerIds(withIds, frame, frameIndex);
 
-        return new FrameResult
+        // Teams are voted per stable PlayerId over recent frames, so this must run after Re-ID.
+        IReadOnlyList<TeamId> teams = _teams is not null
+            ? _teams.Classify(final, frame)
+            : Array.Empty<TeamId>();
+
+        var result = new FrameResult
         {
             FrameIndex = frameIndex,
             TimestampSeconds = timestampSeconds,
             Detections = final,
         };
+        return new TrackedFrame(result, teams);
     }
 
     /// <summary>Computes OSNet embeddings for the player crops and maps volatile track ids to

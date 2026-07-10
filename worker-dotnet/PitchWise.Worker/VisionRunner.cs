@@ -96,6 +96,14 @@ public sealed class VisionRunner
             // off the hot path (checked at most ~every 2s inside StreamingAnnotator).
             bool IsCancelled() => IsJobCancelledSync(jobId);
 
+            // ENGINE_DUMP=1 records one engine observation per processed frame next to the HLS
+            // output. Replaying it through WorldStateReplay is how the possession and ball-filter
+            // thresholds get tuned — without it, every iteration costs a full video pass.
+            string? engineDumpPath =
+                (Environment.GetEnvironmentVariable("ENGINE_DUMP") ?? "") is "1" or "true"
+                    ? Path.Combine(hlsDir, "world_state.jsonl")
+                    : null;
+
             StreamingAnnotator.Result result = await Task.Run(() => StreamingAnnotator.Run(
                 videoPath, hlsDir,
                 _worker.YoloModelPath, _classNames,
@@ -106,7 +114,12 @@ public sealed class VisionRunner
                 executionProvider: _worker.OnnxExecutionProvider,
                 deviceId: _worker.OnnxDeviceId,
                 isCancelled: IsCancelled,
-                reidModelPath: _worker.ReidModelPath), ct);
+                reidModelPath: _worker.ReidModelPath,
+                // No pitch calibration is fitted for recorded video yet, so the engine runs in
+                // normalized coordinates and deliberately emits no distance-derived events.
+                // Passing a fitted Homography here is what switches possession/passes on.
+                homography: null,
+                engineDumpPath: engineDumpPath), ct);
 
             // Persist the per-player time-on-pitch report next to the HLS output (JSON sidecar).
             // Best-effort: a report we can't write shouldn't fail the whole analysis job.

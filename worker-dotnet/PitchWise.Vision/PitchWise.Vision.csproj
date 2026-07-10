@@ -7,6 +7,12 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- The football engine: WorldState + rules, pure math. Vision feeds it observations and
+         never reads back into it, so the dependency only points this way. -->
+    <ProjectReference Include="..\PitchWise.Engine\PitchWise.Engine.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- ONNX Runtime for YOLO11 inference. DirectML build: runs on any DX12 GPU
          (NVIDIA/AMD/Intel) with NO CUDA/cuDNN install, and still includes the CPU EP
          for fallback. The provider is chosen at runtime (ONNX_EP=dml|cpu). -->
