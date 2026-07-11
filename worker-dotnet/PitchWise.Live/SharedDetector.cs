@@ -29,7 +29,8 @@ public sealed class SharedDetector : IDisposable
         IReadOnlyDictionary<int, string> names = LoadNames(_settings.YoloModelPath, _settings.YoloNamesPath);
         return new Detector(
             _settings.YoloModelPath, names,
-            frameRate: 25, frameStride: 1, imgsz: _settings.LiveImgsz);
+            frameRate: 25, frameStride: 1, imgsz: _settings.LiveImgsz,
+            executionProvider: _settings.OnnxExecutionProvider, deviceId: _settings.OnnxDeviceId);
     }
 
     private static IReadOnlyDictionary<int, string> LoadNames(string modelPath, string? namesPath)

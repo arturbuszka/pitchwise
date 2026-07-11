@@ -15,6 +15,7 @@ public class AppDbContext : DbContext
     public DbSet<Video> Videos => Set<Video>();
     public DbSet<VisionJob> VisionJobs => Set<VisionJob>();
     public DbSet<Event> Events => Set<Event>();
+    public DbSet<MatchStats> MatchStats => Set<MatchStats>();
     public DbSet<Clip> Clips => Set<Clip>();
     public DbSet<Highlight> Highlights => Set<Highlight>();
 
@@ -61,6 +62,7 @@ public class AppDbContext : DbContext
             e.Property(x => x.DurationSeconds).HasColumnName("duration_seconds");
             e.Property(x => x.Fps).HasColumnName("fps");
             e.Property(x => x.Order).HasColumnName("order");
+            e.Property(x => x.AnnotatedFilename).HasColumnName("annotated_filename");
             e.Property(x => x.CreatedAt).HasColumnName("created_at");
             e.HasIndex(x => x.AnalysisId);
         });
@@ -99,6 +101,28 @@ public class AppDbContext : DbContext
             e.Property(x => x.CreatedAt).HasColumnName("created_at");
             e.HasIndex(x => x.AnalysisId);
             e.HasIndex(x => x.VideoId);
+        });
+
+        b.Entity<MatchStats>(e =>
+        {
+            e.ToTable("matchstats");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.VideoId).HasColumnName("video_id");
+            e.Property(x => x.AnalysisId).HasColumnName("analysis_id");
+            e.Property(x => x.PossessionPctA).HasColumnName("possession_pct_a");
+            e.Property(x => x.PossessionPctB).HasColumnName("possession_pct_b");
+            e.Property(x => x.ControlledSeconds).HasColumnName("controlled_seconds");
+            e.Property(x => x.LooseSeconds).HasColumnName("loose_seconds");
+            e.Property(x => x.PassesA).HasColumnName("passes_a");
+            e.Property(x => x.PassesB).HasColumnName("passes_b");
+            e.Property(x => x.TurnoversA).HasColumnName("turnovers_a");
+            e.Property(x => x.TurnoversB).HasColumnName("turnovers_b");
+            e.Property(x => x.PassAccuracyPctA).HasColumnName("pass_accuracy_pct_a");
+            e.Property(x => x.PassAccuracyPctB).HasColumnName("pass_accuracy_pct_b");
+            e.Property(x => x.TimeOnPitchJson).HasColumnName("time_on_pitch_json");
+            e.Property(x => x.CreatedAt).HasColumnName("created_at");
+            e.HasIndex(x => x.VideoId).IsUnique();
         });
 
         b.Entity<Clip>(e =>

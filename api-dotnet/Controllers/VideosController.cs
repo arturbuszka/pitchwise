@@ -95,15 +95,19 @@ public class VideosController : ControllerBase
         var video = await GetVideoOr404(analysisId, videoId);
         if (video is null) return NotFound(new { detail = "Video not found" });
 
-        // do not start a second job if one is already active
+        // Do not start a second run if one is already active.
         var existing = await _db.VisionJobs
             .Where(j => j.VideoId == videoId &&
                         (j.Status == VisionJobStatus.Pending || j.Status == VisionJobStatus.Running))
+            .OrderByDescending(j => j.CreatedAt)
             .FirstOrDefaultAsync();
         if (existing is not null)
-            return JobToOut(existing);
+            return JobToOut(existing, video);
 
         var job = new VisionJob { VideoId = videoId };
+
+        // Re-analysis: drop the old annotated file reference until the new render lands.
+        video.AnnotatedFilename = null;
         _db.VisionJobs.Add(job);
 
         var session = await _db.AnalysisSessions.FindAsync(analysisId);
@@ -116,7 +120,31 @@ public class VideosController : ControllerBase
 
         await _queue.EnqueueAsync(job.Id);
 
-        return JobToOut(job);
+        return JobToOut(job, video);
+    }
+
+    [HttpPost("{analysisId:int}/videos/{videoId:int}/analyze/cancel")]
+    public async Task<ActionResult<VisionJobOut?>> CancelAnalysis(int analysisId, int videoId)
+    {
+        var video = await GetVideoOr404(analysisId, videoId);
+        if (video is null) return NotFound(new { detail = "Video not found" });
+
+        // Mark the active job Failed/cancelled. The worker polls the job status and stops
+        // when it's no longer Running (cross-process signal, no Redis pub/sub needed). This
+        // also unblocks StartAnalysis's dedup so the user can re-run.
+        var job = await _db.VisionJobs
+            .Where(j => j.VideoId == videoId &&
+                        (j.Status == VisionJobStatus.Pending || j.Status == VisionJobStatus.Running))
+            .OrderByDescending(j => j.CreatedAt)
+            .FirstOrDefaultAsync();
+        if (job is null) return Ok((VisionJobOut?)null);
+
+        job.Status = VisionJobStatus.Failed;
+        job.Error = "cancelled";
+        job.FinishedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync();
+
+        return Ok(JobToOut(job, video));
     }
 
     [HttpGet("{analysisId:int}/videos/{videoId:int}/status")]
@@ -130,7 +158,70 @@ public class VideosController : ControllerBase
             .OrderByDescending(j => j.CreatedAt)
             .FirstOrDefaultAsync();
         if (job is null) return Ok((VisionJobOut?)null);
-        return JobToOut(job);
+        return Ok(JobToOut(job, video));
+    }
+
+    private static VisionJobOut JobToOut(VisionJob j, Video video) =>
+        new(j.Id, j.VideoId, j.Status, j.Progress, j.Error, j.CreatedAt, j.FinishedAt,
+            AnnotatedReady: !string.IsNullOrEmpty(video.AnnotatedFilename));
+
+    // Whole-match aggregate stats for one video. 404 until analysis has produced a row.
+    [HttpGet("{analysisId:int}/videos/{videoId:int}/stats")]
+    public async Task<ActionResult<MatchStatsOut>> GetStats(int analysisId, int videoId)
+    {
+        var video = await GetVideoOr404(analysisId, videoId);
+        if (video is null) return NotFound(new { detail = "Video not found" });
+
+        var s = await _db.MatchStats.FirstOrDefaultAsync(x => x.VideoId == videoId);
+        if (s is null) return NotFound(new { detail = "No stats yet" });
+
+        return Ok(new MatchStatsOut(
+            s.VideoId, s.AnalysisId,
+            new TeamStatsOut(s.PossessionPctA, s.PassesA, s.TurnoversA, s.PassAccuracyPctA),
+            new TeamStatsOut(s.PossessionPctB, s.PassesB, s.TurnoversB, s.PassAccuracyPctB),
+            s.ControlledSeconds, s.LooseSeconds,
+            // The time-on-pitch list is already JSON in the DB; hand it through as a parsed node
+            // so it serializes as a real array, not a string.
+            System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>(s.TimeOnPitchJson)));
+    }
+
+    // ---- Annotated (boxes burned-in) playback: progressive HLS VOD ----
+    // AnnotatedFilename holds the HLS dir name (e.g. "annotated_v6") under UploadsDir.
+    // The worker grows index.m3u8 + seg_*.ts while analysing, so the video is watchable
+    // within seconds and fully seekable over what's rendered so far.
+
+    [HttpGet("{analysisId:int}/videos/{videoId:int}/annotated/index.m3u8")]
+    public async Task<IActionResult> AnnotatedPlaylist(int analysisId, int videoId)
+    {
+        var video = await GetVideoOr404(analysisId, videoId);
+        if (video is null || string.IsNullOrEmpty(video.AnnotatedFilename))
+            return NotFound(new { detail = "Annotated video not ready" });
+
+        var path = Path.Combine(_settings.UploadsDir, video.AnnotatedFilename, "index.m3u8");
+        if (!System.IO.File.Exists(path)) return NotFound(new { detail = "Playlist not ready" });
+
+        // no-store: the playlist grows during analysis, don't let the browser cache it.
+        Response.Headers.CacheControl = "no-cache, no-store, must-revalidate";
+        var bytes = await System.IO.File.ReadAllBytesAsync(path);
+        return File(bytes, "application/vnd.apple.mpegurl");
+    }
+
+    [HttpGet("{analysisId:int}/videos/{videoId:int}/annotated/{segment}")]
+    public async Task<IActionResult> AnnotatedSegment(int analysisId, int videoId, string segment)
+    {
+        // Only allow plain segment filenames (no path traversal).
+        if (segment.Contains('/') || segment.Contains('\\') || segment.Contains("..") ||
+            !segment.EndsWith(".ts", StringComparison.OrdinalIgnoreCase))
+            return BadRequest(new { detail = "invalid segment" });
+
+        var video = await GetVideoOr404(analysisId, videoId);
+        if (video is null || string.IsNullOrEmpty(video.AnnotatedFilename))
+            return NotFound(new { detail = "Annotated video not ready" });
+
+        var path = Path.Combine(_settings.UploadsDir, video.AnnotatedFilename, segment);
+        if (!System.IO.File.Exists(path)) return NotFound(new { detail = "Segment not found" });
+
+        return PhysicalFile(Path.GetFullPath(path), "video/mp2t", enableRangeProcessing: true);
     }
 
     // ---- Clips ----
@@ -159,9 +250,6 @@ public class VideosController : ControllerBase
         if (video is null || video.AnalysisId != analysisId) return null;
         return video;
     }
-
-    private static VisionJobOut JobToOut(VisionJob j) =>
-        new(j.Id, j.VideoId, j.Status, j.Progress, j.Error, j.CreatedAt, j.FinishedAt);
 
     private static string ContentTypeFor(string path)
     {

@@ -36,6 +36,8 @@ public record AnalysisDetail(
     DateTime UpdatedAt,
     List<VideoOut> Videos);
 
+// One video → one analysis job. AnnotatedReady flags that the boxes-burned-in playback
+// file has been rendered (until then the player shows a placeholder).
 public record VisionJobOut(
     int Id,
     int VideoId,
@@ -43,7 +45,8 @@ public record VisionJobOut(
     double Progress,
     string? Error,
     DateTime CreatedAt,
-    DateTime? FinishedAt);
+    DateTime? FinishedAt,
+    bool AnnotatedReady = false);
 
 public record ClipOut(
     int Id,
@@ -115,3 +118,23 @@ public record HlsUrlOut(string Url, DateTime ExpiresAt);
 
 // Public metadata for the share page (no analysis id leaked).
 public record SharePublicOut(string Name, HighlightStatus Status, DateTime ExpiresAt);
+
+// --- Match statistics ---
+
+public record TeamStatsOut(
+    double PossessionPct,
+    int Passes,
+    int Turnovers,
+    double PassAccuracyPct);
+
+// Whole-match aggregates for one video. All zero when the engine ran without pitch coordinates;
+// the frontend renders an explicit empty state in that case. TimeOnPitch is passed through as the
+// raw JSON array stored by the worker.
+public record MatchStatsOut(
+    int VideoId,
+    int AnalysisId,
+    TeamStatsOut TeamA,
+    TeamStatsOut TeamB,
+    double ControlledSeconds,
+    double LooseSeconds,
+    System.Text.Json.JsonElement TimeOnPitch);

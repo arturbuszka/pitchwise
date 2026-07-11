@@ -90,6 +90,32 @@ using (var scope = app.Services.CreateScope())
             stopped_at TIMESTAMPTZ NULL
         )
     """);
+    // Annotated (boxes burned-in) playback: added after initial deployment, so ALTER the
+    // existing table (EnsureCreated only builds brand-new DBs). See
+    // Migrations/003_annotated_video.sql.
+    db.Database.ExecuteSqlRaw(
+        "ALTER TABLE video ADD COLUMN IF NOT EXISTS annotated_filename TEXT NULL;");
+    // Whole-match aggregate stats (possession, passing). Added after initial deployment; one row
+    // per video (unique video_id). See Migrations/004_match_stats.sql.
+    db.Database.ExecuteSqlRaw("""
+        CREATE TABLE IF NOT EXISTS matchstats (
+            id SERIAL PRIMARY KEY,
+            video_id INTEGER NOT NULL UNIQUE,
+            analysis_id INTEGER NOT NULL,
+            possession_pct_a DOUBLE PRECISION NOT NULL DEFAULT 0,
+            possession_pct_b DOUBLE PRECISION NOT NULL DEFAULT 0,
+            controlled_seconds DOUBLE PRECISION NOT NULL DEFAULT 0,
+            loose_seconds DOUBLE PRECISION NOT NULL DEFAULT 0,
+            passes_a INTEGER NOT NULL DEFAULT 0,
+            passes_b INTEGER NOT NULL DEFAULT 0,
+            turnovers_a INTEGER NOT NULL DEFAULT 0,
+            turnovers_b INTEGER NOT NULL DEFAULT 0,
+            pass_accuracy_pct_a DOUBLE PRECISION NOT NULL DEFAULT 0,
+            pass_accuracy_pct_b DOUBLE PRECISION NOT NULL DEFAULT 0,
+            time_on_pitch_json TEXT NOT NULL DEFAULT '[]',
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+    """);
 }
 
 app.UseCors();

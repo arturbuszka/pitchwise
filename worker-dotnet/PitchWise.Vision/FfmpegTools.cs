@@ -124,6 +124,54 @@ public static class FfmpegTools
         }) && File.Exists(playlist);
     }
 
+    /// <summary>
+    /// Starts an ffmpeg process that consumes raw BGR24 frames on stdin and writes a
+    /// growing HLS **event** playlist (index.m3u8 + seg_%05d.ts) into <paramref name="outDir"/>.
+    /// playlist_type=event: append-only, segments never removed, no #EXT-X-ENDLIST until the
+    /// input closes — so hls.js polls it live and picks up new segments as they land, then
+    /// switches to a fully-seekable VOD once ffmpeg finishes. Caller writes frames to
+    /// StandardInput.BaseStream and closes it when done.
+    /// </summary>
+    public static Process? StartEncodeHls(string outDir, int w, int h, double fps, int segSeconds = 4)
+    {
+        Directory.CreateDirectory(outDir);
+        string playlist = Path.Combine(outDir, "index.m3u8");
+        string segPattern = Path.Combine(outDir, "seg_%05d.ts");
+        var psi = new ProcessStartInfo
+        {
+            FileName = FfmpegPath,
+            RedirectStandardInput = true,
+            RedirectStandardOutput = false,
+            RedirectStandardError = false,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+        };
+        foreach (string a in new[]
+        {
+            "-y",
+            "-f", "rawvideo", "-vcodec", "rawvideo",
+            "-s", $"{w}x{h}",
+            "-pix_fmt", "bgr24",
+            "-r", fps.ToString(CultureInfo.InvariantCulture),
+            "-i", "pipe:0",
+            "-c:v", "libx264",
+            "-preset", "veryfast",
+            "-pix_fmt", "yuv420p",
+            "-g", Math.Max(1, (int)(fps * segSeconds)).ToString(),
+            "-force_key_frames", $"expr:gte(t,n_forced*{segSeconds})",
+            "-f", "hls",
+            "-hls_time", segSeconds.ToString(),
+            "-hls_playlist_type", "event",
+            "-hls_list_size", "0",
+            "-hls_flags", "independent_segments",
+            "-hls_segment_filename", segPattern,
+            playlist,
+        }) psi.ArgumentList.Add(a);
+
+        try { return Process.Start(psi); }
+        catch (Exception) { return null; }
+    }
+
     private static bool Run(string exe, string[] args)
     {
         try

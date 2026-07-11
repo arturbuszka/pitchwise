@@ -24,6 +24,10 @@ public class Video
     public double? DurationSeconds { get; set; }
     public double? Fps { get; set; }
     public int Order { get; set; }
+    // Annotated (boxes burned-in) MP4, stitched from all segment renders. Null until
+    // every segment of this video has finished rendering. Served for playback with
+    // full rewind (HTTP Range); the raw upload is the fallback.
+    public string? AnnotatedFilename { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }
 
@@ -36,6 +40,35 @@ public class VisionJob
     public string? Error { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime? FinishedAt { get; set; }
+}
+
+// Whole-match aggregate statistics for one analysed video, produced by the worker's
+// MatchStatsTracker. One row per video (upsert on re-analysis). Team-level counts are plain
+// columns; the per-player time-on-pitch list is variable-length and stored as JSON.
+public class MatchStats
+{
+    public int Id { get; set; }
+    public int VideoId { get; set; }
+    public int AnalysisId { get; set; }
+
+    // Possession split (of controlled time; A + B ≈ 100 when the engine attributed any).
+    public double PossessionPctA { get; set; }
+    public double PossessionPctB { get; set; }
+    public double ControlledSeconds { get; set; }
+    public double LooseSeconds { get; set; }
+
+    // Passing, per team.
+    public int PassesA { get; set; }
+    public int PassesB { get; set; }
+    public int TurnoversA { get; set; }
+    public int TurnoversB { get; set; }
+    public double PassAccuracyPctA { get; set; }
+    public double PassAccuracyPctB { get; set; }
+
+    // JSON array of { player_id, seconds_on_pitch, frames_seen }, descending by time.
+    public string TimeOnPitchJson { get; set; } = "[]";
+
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }
 
 public class Event
