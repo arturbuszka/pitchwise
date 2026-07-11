@@ -150,6 +150,12 @@ public sealed class VisionRunner
             if (_worker.RenderAnnotated && result.EncodeOk)
                 video.AnnotatedFilename = hlsDirName;
 
+            // Whole-match aggregate stats: upsert one row per video (re-analysis overwrites).
+            // Written even when zero (engine ran without pitch coords), so the UI shows an honest
+            // empty state rather than "no data at all".
+            if (result.MatchStats is MatchStatsReport ms)
+                await UpsertMatchStatsAsync(db, videoId, video.AnalysisId, ms, result.TimeOnPitch, ct);
+
             job.Status = VisionJobStatus.Done;
             job.Progress = 1.0;
             job.FinishedAt = DateTime.UtcNow;
@@ -188,6 +194,42 @@ public sealed class VisionRunner
                 await db.SaveChangesAsync(ct);
             }
         }
+    }
+
+    // Inserts or updates the one MatchStats row for this video. The per-player time-on-pitch list
+    // rides along as JSON (variable length); team aggregates are plain columns.
+    private static async Task UpsertMatchStatsAsync(
+        AppDbContext db, int videoId, int analysisId,
+        MatchStatsReport ms, IReadOnlyList<PlayerTimeOnPitch> timeOnPitch, CancellationToken ct)
+    {
+        string topJson = System.Text.Json.JsonSerializer.Serialize(
+            timeOnPitch.Select(p => new
+            {
+                player_id = p.PlayerId,
+                seconds_on_pitch = Math.Round(p.SecondsOnPitch, 1),
+                frames_seen = p.FramesSeen,
+            }));
+
+        MatchStats? row = await db.MatchStats.FirstOrDefaultAsync(s => s.VideoId == videoId, ct);
+        if (row is null)
+        {
+            row = new MatchStats { VideoId = videoId, AnalysisId = analysisId };
+            db.MatchStats.Add(row);
+        }
+
+        row.PossessionPctA = Math.Round(ms.TeamA.PossessionPct, 1);
+        row.PossessionPctB = Math.Round(ms.TeamB.PossessionPct, 1);
+        row.ControlledSeconds = Math.Round(ms.ControlledSeconds, 1);
+        row.LooseSeconds = Math.Round(ms.LooseSeconds, 1);
+        row.PassesA = ms.TeamA.Passes;
+        row.PassesB = ms.TeamB.Passes;
+        row.TurnoversA = ms.TeamA.Turnovers;
+        row.TurnoversB = ms.TeamB.Turnovers;
+        row.PassAccuracyPctA = Math.Round(ms.TeamA.PassAccuracyPct, 1);
+        row.PassAccuracyPctB = Math.Round(ms.TeamB.PassAccuracyPct, 1);
+        row.TimeOnPitchJson = topJson;
+
+        // SaveChanges is called by the caller's scope alongside the video/job updates.
     }
 
     // Writes the per-player on-pitch time as a JSON sidecar in the video's HLS dir. Also logs

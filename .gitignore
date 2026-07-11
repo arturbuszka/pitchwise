@@ -19,6 +19,14 @@ venv/
 *.onnx
 !**/sample/*.mp4
 
+# ML training artifacts. Regenerable: `runs/` is ultralytics' output dir, `rf_pitch/` is the
+# Roboflow pitch-keypoint dataset (re-downloadable), `pitch_train/` is a leftover args dump.
+# Weights inside them are already covered by *.pt/*.onnx above; these entries catch the rest
+# (images, labels, caches, csv). The golden_*.json parity oracles are deliberately NOT ignored.
+/runs/
+worker-dotnet/vision-onnx/pitch_train/
+worker-dotnet/vision-onnx/rf_pitch/
+
 # Node / Next
 node_modules/
 .next/

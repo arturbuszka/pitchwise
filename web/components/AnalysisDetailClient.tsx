@@ -9,6 +9,7 @@ import {
   EventType,
   EventTypeConfig,
   Highlight,
+  MatchStats,
   VideoItem,
   VisionJob,
   api,
@@ -17,6 +18,7 @@ import {
 import { Chat } from "./Chat";
 import { QuickActions } from "./QuickActions";
 import { EventResultsPanel } from "./EventResultsPanel";
+import { MatchStatsPanel } from "./MatchStatsPanel";
 import { HlsPlayer } from "./HlsPlayer";
 import { AnnotatedHlsPlayer } from "./AnnotatedHlsPlayer";
 
@@ -43,6 +45,7 @@ export function AnalysisDetailClient({
   );
   const [activeFilters, setActiveFilters] = useState<Set<EventType>>(new Set());
   const [job, setJob] = useState<VisionJob | null>(null);
+  const [stats, setStats] = useState<MatchStats | null>(null);
   const [busy, setBusy] = useState(false);
   const [uploadPct, setUploadPct] = useState<number | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
@@ -133,6 +136,11 @@ export function AnalysisDetailClient({
     api.analyses.videos.status(analysis.id, activeVideoId).then((s) => {
       if (!cancelled) setJob(s);
     });
+    // Match stats: present once analysis has produced a row (404 → null before then).
+    setStats(null);
+    api.analyses.videos.stats(analysis.id, activeVideoId).then((s) => {
+      if (!cancelled) setStats(s);
+    });
     return () => {
       cancelled = true;
     };
@@ -153,6 +161,8 @@ export function AnalysisDetailClient({
       await refreshEvents();
       if (updated?.status === "done") {
         clearInterval(interval);
+        // Analysis finished — the stats row now exists; pull it in.
+        api.analyses.videos.stats(analysis.id, activeVideoId).then(setStats).catch(() => {});
         router.refresh();
       } else if (updated?.status === "failed") {
         clearInterval(interval);
@@ -523,6 +533,11 @@ export function AnalysisDetailClient({
               QUICK ACTIONS
             </p>
             <QuickActions active={activeFilters} onToggle={toggleFilter} />
+          </div>
+
+          {/* Match statistics */}
+          <div className="mb-4">
+            <MatchStatsPanel stats={stats} />
           </div>
 
           {/* Results */}

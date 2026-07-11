@@ -28,6 +28,10 @@ public static class StreamingAnnotator
         /// <summary>Per-player on-pitch time, ordered by descending time. Empty when Re-ID
         /// is disabled (no reidModelPath).</summary>
         public IReadOnlyList<PlayerTimeOnPitch> TimeOnPitch { get; init; } = Array.Empty<PlayerTimeOnPitch>();
+
+        /// <summary>Whole-match possession and pass aggregates. Zeroed when the engine is disabled
+        /// or ran without pitch coordinates; still reported so the UI has an honest empty state.</summary>
+        public MatchStatsReport? MatchStats { get; init; }
     }
 
     /// <param name="videoPath">Source recording.</param>
@@ -114,6 +118,9 @@ public static class StreamingAnnotator
         RuleEngine? ruleEngine = engineEnabled
             ? new RuleEngine(new List<IGameRule> { new PossessionRule(), new PassRule(engCfg) }, engCfg)
             : null;
+        // Whole-match aggregates, mirrored on timeOnPitch. Always constructed so the run reports
+        // an (empty) MatchStats even when the engine never attributes possession.
+        var matchStats = new MatchStatsTracker();
 
         // The dump header carries the two team colours, which the classifier only knows after it
         // has seeded. Opening it lazily keeps that diagnostic in the file; a header written on
@@ -176,7 +183,11 @@ public static class StreamingAnnotator
             dump = WorldStateJsonl.TryCreate(engineDumpPath, new WorldStateJsonl.Header(
                 Fps: fps, FrameStride: stride,
                 PitchLength: engCfg.PitchLength, PitchWidth: engCfg.PitchWidth,
-                NormalizedCoords: homography is null,
+                // Header describes the RUN, not one frame: coordinates are in metres whenever a
+                // pitch model or a fixed homography is available. (Per-frame, an individual
+                // observation may still be normalized before the registrar catches the lines —
+                // that lives in each frame's own "n" field, not here.)
+                NormalizedCoords: !pitchModelActive && homography is null,
                 TeamColorA: colorA, TeamColorB: colorB));
             if (dump is not null)
                 foreach (FrameObservation buffered in pendingObservations) dump.Append(buffered);
@@ -230,8 +241,14 @@ public static class StreamingAnnotator
                         fr, tf.Teams, frameHomography, width, height);
                     RecordObservation(obs);
                     WorldState ws = world.Add(obs);
-                    IReadOnlyList<DetectedEvent> engineEvents =
-                        EngineEventShim.ToDetectedEvents(ruleEngine.OnFrame(ws));
+                    matchStats.Add(ws);
+
+                    // Capture raw engine events BEFORE the persistence shim: the shim drops
+                    // `pass` and `possession_change`, but the stats tracker needs `pass` to count
+                    // completed passes, not just turnovers.
+                    IReadOnlyList<GameEvent> raw = ruleEngine.OnFrame(ws);
+                    foreach (GameEvent ge in raw) matchStats.AddEvent(ge);
+                    IReadOnlyList<DetectedEvent> engineEvents = EngineEventShim.ToDetectedEvents(raw);
                     if (engineEvents.Count > 0) EmitFresh(engineEvents);
                 }
 
@@ -304,7 +321,11 @@ public static class StreamingAnnotator
             {
                 FlushWindow();
                 if (ruleEngine is not null)
-                    EmitFresh(EngineEventShim.ToDetectedEvents(ruleEngine.Flush()));
+                {
+                    IReadOnlyList<GameEvent> flushed = ruleEngine.Flush();
+                    foreach (GameEvent ge in flushed) matchStats.AddEvent(ge);
+                    EmitFresh(EngineEventShim.ToDetectedEvents(flushed));
+                }
             }
 
             ffmpeg.StandardInput.Close();
@@ -319,6 +340,7 @@ public static class StreamingAnnotator
                 FramesProcessed = framesProcessed,
                 EncodeOk = ffmpeg.ExitCode == 0 && File.Exists(Path.Combine(hlsDir, "index.m3u8")),
                 TimeOnPitch = cancelled ? Array.Empty<PlayerTimeOnPitch>() : timeOnPitch.Report(),
+                MatchStats = cancelled ? null : matchStats.Report(),
             };
         }
         finally
@@ -332,7 +354,7 @@ public static class StreamingAnnotator
                 dump = WorldStateJsonl.TryCreate(engineDumpPath, new WorldStateJsonl.Header(
                     Fps: fps, FrameStride: stride,
                     PitchLength: engCfg.PitchLength, PitchWidth: engCfg.PitchWidth,
-                    NormalizedCoords: homography is null,
+                    NormalizedCoords: !pitchModelActive && homography is null,
                     TeamColorA: colorA, TeamColorB: colorB));
                 if (dump is not null)
                     foreach (FrameObservation buffered in pendingObservations) dump.Append(buffered);

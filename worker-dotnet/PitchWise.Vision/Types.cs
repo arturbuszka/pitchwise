@@ -84,3 +84,30 @@ public readonly record struct PlayerTimeOnPitch(
     double FirstSeenSeconds,
     double LastSeenSeconds,
     int FramesSeen);
+
+/// <summary>Per-team match aggregates, produced by <see cref="MatchStatsTracker"/>.</summary>
+/// <param name="PossessionPct">Share of controlled time held by this team, 0..100. Computed over
+/// time the ball was controlled by SOMEONE (loose/contested time is excluded from the split, so
+/// A + B = 100).</param>
+/// <param name="Passes">Completed passes to a team-mate.</param>
+/// <param name="Turnovers">Passes that went to the opposition (a lost ball).</param>
+/// <param name="PassAccuracyPct">Passes / (Passes + Turnovers) * 100, or 0 when neither.</param>
+public readonly record struct TeamStats(
+    double PossessionPct,
+    int Passes,
+    int Turnovers,
+    double PassAccuracyPct);
+
+/// <summary>Whole-video match statistics. Zero/empty until the engine runs with real pitch
+/// coordinates (needs a homography); reported regardless so the UI can render an honest empty
+/// state rather than nothing.</summary>
+/// <param name="ControlledSeconds">Total time the ball was under someone's control (the
+/// denominator behind the possession split).</param>
+/// <param name="LooseSeconds">Time the ball was loose or contested (not attributed to a team).</param>
+/// <param name="TeamA">Team A aggregates.</param>
+/// <param name="TeamB">Team B aggregates.</param>
+public readonly record struct MatchStatsReport(
+    double ControlledSeconds,
+    double LooseSeconds,
+    TeamStats TeamA,
+    TeamStats TeamB);
