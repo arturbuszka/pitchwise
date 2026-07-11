@@ -96,6 +96,29 @@ export interface EventTypeConfig {
   bg: string;
 }
 
+export interface TeamStats {
+  possession_pct: number;
+  passes: number;
+  turnovers: number;
+  pass_accuracy_pct: number;
+}
+
+export interface PlayerTimeOnPitch {
+  player_id: number;
+  seconds_on_pitch: number;
+  frames_seen: number;
+}
+
+export interface MatchStats {
+  video_id: number;
+  analysis_id: number;
+  team_a: TeamStats;
+  team_b: TeamStats;
+  controlled_seconds: number;
+  loose_seconds: number;
+  time_on_pitch: PlayerTimeOnPitch[];
+}
+
 export type HighlightStatus = "pending" | "running" | "done" | "failed";
 
 export interface Highlight {
@@ -244,6 +267,11 @@ export const api = {
             const text = await r.text();
             return text ? (JSON.parse(text) as VisionJob) : null;
           }
+        ),
+      // Whole-match aggregate stats. 404 (→ null) until analysis has produced a row.
+      stats: (analysisId: number, videoId: number): Promise<MatchStats | null> =>
+        fetch(`${API}/api/analyses/${analysisId}/videos/${videoId}/stats`, { cache: "no-store" }).then(
+          (r) => (r.ok ? (r.json() as Promise<MatchStats>) : null)
         ),
     },
 

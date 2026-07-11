@@ -68,6 +68,10 @@ services:
       # Football model (player/ball/referee/goalkeeper) baked into the image.
       # Fallback: /app/models/yolo11n.onnx (COCO, person-only, no ball detection).
       YOLO_MODEL_PATH: "/app/models/football.onnx"
+      # OSNet person-Re-ID model (export via vision-onnx/export_reid_onnx.py). Enables
+      # stable per-player identity across track-id switches + a time-on-pitch report.
+      # Leave unset to disable Re-ID (worker behaves as before).
+      REID_MODEL_PATH: "/app/models/osnet_x0_25.onnx"
       LIVE_PIPELINE_MODE: "detect"
     volumes:
       - ./storage:/app/storage

@@ -165,6 +165,26 @@ public class VideosController : ControllerBase
         new(j.Id, j.VideoId, j.Status, j.Progress, j.Error, j.CreatedAt, j.FinishedAt,
             AnnotatedReady: !string.IsNullOrEmpty(video.AnnotatedFilename));
 
+    // Whole-match aggregate stats for one video. 404 until analysis has produced a row.
+    [HttpGet("{analysisId:int}/videos/{videoId:int}/stats")]
+    public async Task<ActionResult<MatchStatsOut>> GetStats(int analysisId, int videoId)
+    {
+        var video = await GetVideoOr404(analysisId, videoId);
+        if (video is null) return NotFound(new { detail = "Video not found" });
+
+        var s = await _db.MatchStats.FirstOrDefaultAsync(x => x.VideoId == videoId);
+        if (s is null) return NotFound(new { detail = "No stats yet" });
+
+        return Ok(new MatchStatsOut(
+            s.VideoId, s.AnalysisId,
+            new TeamStatsOut(s.PossessionPctA, s.PassesA, s.TurnoversA, s.PassAccuracyPctA),
+            new TeamStatsOut(s.PossessionPctB, s.PassesB, s.TurnoversB, s.PassAccuracyPctB),
+            s.ControlledSeconds, s.LooseSeconds,
+            // The time-on-pitch list is already JSON in the DB; hand it through as a parsed node
+            // so it serializes as a real array, not a string.
+            System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>(s.TimeOnPitchJson)));
+    }
+
     // ---- Annotated (boxes burned-in) playback: progressive HLS VOD ----
     // AnnotatedFilename holds the HLS dir name (e.g. "annotated_v6") under UploadsDir.
     // The worker grows index.m3u8 + seg_*.ts while analysing, so the video is watchable

@@ -96,6 +96,14 @@ public sealed class VisionRunner
             // off the hot path (checked at most ~every 2s inside StreamingAnnotator).
             bool IsCancelled() => IsJobCancelledSync(jobId);
 
+            // ENGINE_DUMP=1 records one engine observation per processed frame next to the HLS
+            // output. Replaying it through WorldStateReplay is how the possession and ball-filter
+            // thresholds get tuned — without it, every iteration costs a full video pass.
+            string? engineDumpPath =
+                (Environment.GetEnvironmentVariable("ENGINE_DUMP") ?? "") is "1" or "true"
+                    ? Path.Combine(hlsDir, "world_state.jsonl")
+                    : null;
+
             StreamingAnnotator.Result result = await Task.Run(() => StreamingAnnotator.Run(
                 videoPath, hlsDir,
                 _worker.YoloModelPath, _classNames,
@@ -105,7 +113,19 @@ public sealed class VisionRunner
                 onEvents: OnEvents,
                 executionProvider: _worker.OnnxExecutionProvider,
                 deviceId: _worker.OnnxDeviceId,
-                isCancelled: IsCancelled), ct);
+                isCancelled: IsCancelled,
+                reidModelPath: _worker.ReidModelPath,
+                // A pitch-keypoint model, when configured, registers each frame to metres per
+                // frame (broadcast camera) and switches possession/passes on. Without it the
+                // engine stays in normalized coordinates and emits no distance-derived events.
+                homography: null,
+                engineDumpPath: engineDumpPath,
+                pitchModelPath: _worker.PitchModelPath), ct);
+
+            // Persist the per-player time-on-pitch report next to the HLS output (JSON sidecar).
+            // Best-effort: a report we can't write shouldn't fail the whole analysis job.
+            if (!result.Cancelled && result.TimeOnPitch.Count > 0)
+                WriteTimeOnPitchReport(hlsDir, result.TimeOnPitch);
 
             // 3. Finalise in one scope: duration/fps, ensure annotated dir set, mark done.
             using IServiceScope scope = _scopeFactory.CreateScope();
@@ -129,6 +149,12 @@ public sealed class VisionRunner
             video.Fps = result.Fps;
             if (_worker.RenderAnnotated && result.EncodeOk)
                 video.AnnotatedFilename = hlsDirName;
+
+            // Whole-match aggregate stats: upsert one row per video (re-analysis overwrites).
+            // Written even when zero (engine ran without pitch coords), so the UI shows an honest
+            // empty state rather than "no data at all".
+            if (result.MatchStats is MatchStatsReport ms)
+                await UpsertMatchStatsAsync(db, videoId, video.AnalysisId, ms, result.TimeOnPitch, ct);
 
             job.Status = VisionJobStatus.Done;
             job.Progress = 1.0;
@@ -167,6 +193,61 @@ public sealed class VisionRunner
                 job.FinishedAt = DateTime.UtcNow;
                 await db.SaveChangesAsync(ct);
             }
+        }
+    }
+
+    // Inserts or updates the one MatchStats row for this video. The per-player time-on-pitch list
+    // rides along as JSON (variable length); team aggregates are plain columns.
+    private static async Task UpsertMatchStatsAsync(
+        AppDbContext db, int videoId, int analysisId,
+        MatchStatsReport ms, IReadOnlyList<PlayerTimeOnPitch> timeOnPitch, CancellationToken ct)
+    {
+        string topJson = System.Text.Json.JsonSerializer.Serialize(
+            timeOnPitch.Select(p => new
+            {
+                player_id = p.PlayerId,
+                seconds_on_pitch = Math.Round(p.SecondsOnPitch, 1),
+                frames_seen = p.FramesSeen,
+            }));
+
+        MatchStats? row = await db.MatchStats.FirstOrDefaultAsync(s => s.VideoId == videoId, ct);
+        if (row is null)
+        {
+            row = new MatchStats { VideoId = videoId, AnalysisId = analysisId };
+            db.MatchStats.Add(row);
+        }
+
+        row.PossessionPctA = Math.Round(ms.TeamA.PossessionPct, 1);
+        row.PossessionPctB = Math.Round(ms.TeamB.PossessionPct, 1);
+        row.ControlledSeconds = Math.Round(ms.ControlledSeconds, 1);
+        row.LooseSeconds = Math.Round(ms.LooseSeconds, 1);
+        row.PassesA = ms.TeamA.Passes;
+        row.PassesB = ms.TeamB.Passes;
+        row.TurnoversA = ms.TeamA.Turnovers;
+        row.TurnoversB = ms.TeamB.Turnovers;
+        row.PassAccuracyPctA = Math.Round(ms.TeamA.PassAccuracyPct, 1);
+        row.PassAccuracyPctB = Math.Round(ms.TeamB.PassAccuracyPct, 1);
+        row.TimeOnPitchJson = topJson;
+
+        // SaveChanges is called by the caller's scope alongside the video/job updates.
+    }
+
+    // Writes the per-player on-pitch time as a JSON sidecar in the video's HLS dir. Also logs
+    // a short summary to the console so it's visible during a manual/verification run.
+    private static void WriteTimeOnPitchReport(string hlsDir, IReadOnlyList<PlayerTimeOnPitch> report)
+    {
+        try
+        {
+            Directory.CreateDirectory(hlsDir);
+            string path = Path.Combine(hlsDir, "time_on_pitch.json");
+            string json = System.Text.Json.JsonSerializer.Serialize(
+                report, new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
+            File.WriteAllText(path, json);
+            Console.WriteLine($"[Worker] time-on-pitch: {report.Count} players -> {path}");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[Worker] time-on-pitch report write skipped: {ex.Message}");
         }
     }
 
