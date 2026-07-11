@@ -4,15 +4,20 @@ using BT = ByteTrack;
 
 namespace PitchWise.Vision;
 
-/// <summary>A processed frame plus the team assignment for each of its detections.</summary>
+/// <summary>A processed frame plus the team assignment for each of its detections and, when a
+/// pitch model is loaded, the frame's pitch keypoints.</summary>
 /// <param name="Teams">Index-aligned with <c>Frame.Detections</c>. Empty when team
 /// classification is disabled or has not yet seeded.</param>
-/// <remarks>Teams travel alongside <see cref="FrameResult"/> rather than inside
+/// <param name="PitchKeypoints">One per <see cref="PitchModel"/> keypoint (length
+/// <see cref="PitchModel.Count"/>), in original-image pixels; empty when no pitch model is
+/// loaded. Consumed by <see cref="PitchRegistrar"/> to fit the frame's homography.</param>
+/// <remarks>Teams and keypoints travel alongside <see cref="FrameResult"/> rather than inside
 /// <see cref="Detection"/> because that record struct is the contract the parity/golden tests
 /// compare against the original Python pipeline.</remarks>
 public readonly record struct TrackedFrame(
     FrameResult Frame,
-    IReadOnlyList<TeamId> Teams);
+    IReadOnlyList<TeamId> Teams,
+    IReadOnlyList<PitchKeypointDetector.Keypoint> PitchKeypoints);
 
 /// <summary>
 /// Object detection + tracking on video frames. Port of vision/detector.py:
@@ -61,6 +66,9 @@ public sealed class Detector : IDisposable
     // Jersey-colour team assignment. Needs a stable PlayerId to vote over time, so it is only
     // useful alongside Re-ID; null when either is disabled.
     private readonly TeamColorClassifier? _teams;
+    // Pitch registration (keypoint detection). Null when no pitch model is configured; the
+    // engine then stays in normalized coordinates.
+    private readonly PitchKeypointDetector? _pitch;
 
     /// <param name="modelPath">Exported YOLO11 .onnx.</param>
     /// <param name="classNames">model class-id → raw name (from the exported model / golden).</param>
@@ -82,7 +90,8 @@ public sealed class Detector : IDisposable
         string executionProvider = "dml",
         int deviceId = 0,
         string? reidModelPath = null,
-        bool classifyTeams = false)
+        bool classifyTeams = false,
+        string? pitchModelPath = null)
     {
         _detector = new Yolo11OnnxDetector(
             modelPath, classNames, mapClass ?? MapClass, imgsz,
@@ -105,6 +114,9 @@ public sealed class Detector : IDisposable
             _reId = new PlayerReId();
             if (classifyTeams) _teams = new TeamColorClassifier();
         }
+
+        if (!string.IsNullOrWhiteSpace(pitchModelPath))
+            _pitch = new PitchKeypointDetector(pitchModelPath!, imgsz, executionProvider, deviceId);
     }
 
     /// <summary>The two frozen jersey colours as "#rrggbb", once team classification has seeded.
@@ -187,13 +199,19 @@ public sealed class Detector : IDisposable
             ? _teams.Classify(final, frame)
             : Array.Empty<TeamId>();
 
+        // Pitch keypoints are per-frame and independent of the detections; the stateful
+        // registration (smoothing, homography) lives in the caller, not here.
+        IReadOnlyList<PitchKeypointDetector.Keypoint> pitchKps = _pitch is not null
+            ? _pitch.Detect(frame)
+            : Array.Empty<PitchKeypointDetector.Keypoint>();
+
         var result = new FrameResult
         {
             FrameIndex = frameIndex,
             TimestampSeconds = timestampSeconds,
             Detections = final,
         };
-        return new TrackedFrame(result, teams);
+        return new TrackedFrame(result, teams, pitchKps);
     }
 
     /// <summary>Computes OSNet embeddings for the player crops and maps volatile track ids to
@@ -286,5 +304,6 @@ public sealed class Detector : IDisposable
     {
         _detector.Dispose();
         _embedder?.Dispose();
+        _pitch?.Dispose();
     }
 }

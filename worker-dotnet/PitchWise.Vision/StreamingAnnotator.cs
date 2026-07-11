@@ -36,12 +36,19 @@ public static class StreamingAnnotator
     /// caller can flag playback-ready while analysis continues.</param>
     /// <param name="onEvents">Fired per window with newly detected events (absolute timestamps).</param>
     /// <param name="windowSeconds">Rolling event-detection window length (default 30s).</param>
-    /// <param name="homography">Pitch calibration. When null the engine runs in normalized
-    /// coordinates and, by design, emits no distance-derived events — metre thresholds applied to
-    /// pixel fractions would produce confident nonsense.</param>
+    /// <param name="homography">A FIXED pitch calibration, used only when no
+    /// <paramref name="pitchModelPath"/> is given — i.e. a static camera whose homography was set
+    /// once (manual calibration). With a pitch model, homography is fitted PER FRAME and this is
+    /// ignored. When both are null the engine runs in normalized coordinates and, by design,
+    /// emits no distance-derived events — metre thresholds on pixel fractions are confident
+    /// nonsense.</param>
     /// <param name="engineDumpPath">Write one observation per processed frame here (JSONL) for
     /// offline rule tuning via <see cref="WorldStateReplay"/>. Null disables the dump.</param>
     /// <param name="engineConfig">Football thresholds; null uses the defaults.</param>
+    /// <param name="pitchModelPath">Exported pitch-keypoint YOLO-pose .onnx. When set, each frame
+    /// is registered to pitch metres (per-frame homography via <see cref="PitchRegistrar"/>),
+    /// which is what a panning/zooming broadcast camera needs. Null falls back to
+    /// <paramref name="homography"/>.</param>
     public static Result Run(
         string videoPath,
         string hlsDir,
@@ -60,7 +67,8 @@ public static class StreamingAnnotator
         string? reidModelPath = null,
         Homography? homography = null,
         string? engineDumpPath = null,
-        EngineConfig? engineConfig = null)
+        EngineConfig? engineConfig = null,
+        string? pitchModelPath = null)
     {
         (double? probeDuration, double? probeFps) = FfmpegTools.ProbeVideo(videoPath);
 
@@ -86,7 +94,14 @@ public static class StreamingAnnotator
             modelPath, classNames, frameRate: (int)Math.Round(fps),
             frameStride: stride, imgsz: imgsz,
             executionProvider: executionProvider, deviceId: deviceId,
-            reidModelPath: reidModelPath, classifyTeams: engineEnabled);
+            reidModelPath: reidModelPath, classifyTeams: engineEnabled,
+            pitchModelPath: pitchModelPath);
+
+        // Per-frame pitch registration when a pitch model is loaded; otherwise the fixed
+        // homography (if any) is used for every frame. The registrar is stateful (it smooths and
+        // rejects jumpy fits across frames), so it lives here, not in the per-frame Detector.
+        bool pitchModelActive = !string.IsNullOrWhiteSpace(pitchModelPath);
+        var registrar = pitchModelActive ? new PitchRegistrar(width, height) : null;
 
         // Per-player on-pitch time, fed from the (PlayerId-carrying) FrameResults. Only
         // meaningful when Re-ID is enabled; harmless no-op otherwise (no PlayerIds present).
@@ -205,8 +220,14 @@ public static class StreamingAnnotator
 
                 if (world is not null && ruleEngine is not null)
                 {
+                    // Per-frame homography from the registrar when a pitch model is active
+                    // (broadcast camera); otherwise the fixed one passed in (static camera).
+                    Homography? frameHomography = registrar is not null
+                        ? registrar.Update(tf.PitchKeypoints)
+                        : homography;
+
                     FrameObservation obs = ObservationMapper.ToObservation(
-                        fr, tf.Teams, homography, width, height);
+                        fr, tf.Teams, frameHomography, width, height);
                     RecordObservation(obs);
                     WorldState ws = world.Add(obs);
                     IReadOnlyList<DetectedEvent> engineEvents =

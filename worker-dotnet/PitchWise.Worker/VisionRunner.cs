@@ -115,11 +115,12 @@ public sealed class VisionRunner
                 deviceId: _worker.OnnxDeviceId,
                 isCancelled: IsCancelled,
                 reidModelPath: _worker.ReidModelPath,
-                // No pitch calibration is fitted for recorded video yet, so the engine runs in
-                // normalized coordinates and deliberately emits no distance-derived events.
-                // Passing a fitted Homography here is what switches possession/passes on.
+                // A pitch-keypoint model, when configured, registers each frame to metres per
+                // frame (broadcast camera) and switches possession/passes on. Without it the
+                // engine stays in normalized coordinates and emits no distance-derived events.
                 homography: null,
-                engineDumpPath: engineDumpPath), ct);
+                engineDumpPath: engineDumpPath,
+                pitchModelPath: _worker.PitchModelPath), ct);
 
             // Persist the per-player time-on-pitch report next to the HLS output (JSON sidecar).
             // Best-effort: a report we can't write shouldn't fail the whole analysis job.
